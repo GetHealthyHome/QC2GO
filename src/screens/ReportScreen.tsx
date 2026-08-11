@@ -84,7 +84,7 @@ export function ReportScreen() {
 
       <Screen className="pb-10">
         <div className="print-only mb-4">
-          <p className="text-lg font-bold">{settings.companyName || 'Quality Control Report'}</p>
+          <p className="text-lg font-bold">{settings.companyName || 'QC2GO — Quality in motion'}</p>
           <p className="text-sm">
             {checklist.templateName} — {VISIT_TYPE_LABELS[inspection.visitType]}
           </p>

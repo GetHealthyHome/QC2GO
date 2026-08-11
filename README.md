@@ -1,5 +1,7 @@
 # QC2GO
 
+**Quality in motion.**
+
 A mobile-first quality control app for site visits and final walkthroughs on home
 performance, indoor air quality, and heat pump installations.
 

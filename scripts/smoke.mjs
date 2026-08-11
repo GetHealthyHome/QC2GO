@@ -155,5 +155,85 @@ console.log('has photo    :', await page.locator('img[src^="blob:"]').count(), '
 console.log('has signature:', await page.locator('img[src^="data:image/png"]').count(), 'signatures');
 await shot('15-report-after-reload', true);
 
+// --- admin checklist editor ---
+await page.goto(BASE + '/#/settings', { waitUntil: 'networkidle' });
+await page.getByRole('button', { name: /^Admin/ }).click();
+await page.waitForTimeout(400);
+await shot('16-settings-admin');
+
+await page.getByRole('link', { name: /Manage checklists/ }).click();
+await page.waitForURL(/checklists/);
+await shot('17-checklists');
+
+// edit the shared universal section — should touch every checklist
+await page.getByRole('link', { name: /Job Information/ }).click();
+await page.waitForURL(/checklists\/shared/);
+await shot('18-shared-editor');
+await page.getByRole('button', { name: /Universal QC Standards/ }).first().click();
+await page.waitForTimeout(300);
+await page.getByRole('button', { name: 'Add checkpoint' }).click();
+await page.waitForTimeout(200);
+const newQ = page.getByPlaceholder('What is the inspector checking?').last();
+await newQ.scrollIntoViewIfNeeded();
+await newQ.fill('Smart thermostat paired to homeowner Wi-Fi and app');
+await shot('19-shared-added');
+await page.getByRole('button', { name: 'Save changes' }).click();
+await page.waitForTimeout(600);
+
+// build a brand new checklist from scratch
+await page.goto(BASE + '/#/checklists', { waitUntil: 'networkidle' });
+await page.getByRole('button', { name: 'New checklist' }).click();
+await page.waitForURL(/checklists\/tpl_/);
+await page.getByLabel('Checklist name').fill('Attic Prep Pre-Install');
+await page.getByLabel('Category').fill('home-performance');
+await page.getByLabel('Summary').fill('Walked before the crew starts insulation.');
+await page.getByRole('button', { name: 'Add section' }).click();
+await page.waitForTimeout(300);
+await page.getByLabel('Section title').fill('Access & Safety');
+await page.getByPlaceholder('What is the inspector checking?').first()
+  .fill('Attic access is clear and safe to enter');
+await shot('20-new-checklist');
+await page.getByRole('button', { name: 'Save changes' }).click();
+await page.waitForTimeout(600);
+
+// reorder: move the new section's checkpoint list around
+await page.getByRole('button', { name: 'Add checkpoint' }).click();
+await page.waitForTimeout(200);
+await page.getByPlaceholder('What is the inspector checking?').last()
+  .fill('Walkboards installed where required');
+await page.getByRole('button', { name: 'Move checkpoint up' }).last().click();
+await page.waitForTimeout(200);
+const orderAfterMove = await page.getByPlaceholder('What is the inspector checking?').first().inputValue();
+console.log('reorder put on top:', orderAfterMove);
+await page.getByRole('button', { name: 'Save changes' }).click();
+await page.waitForTimeout(600);
+await shot('21-reordered');
+
+// the new checklist shows up for inspectors
+await page.goto(BASE + '/#/checklists', { waitUntil: 'networkidle' });
+await page.waitForTimeout(400);
+console.log('new checklist listed:', await page.getByText('Attic Prep Pre-Install').count() > 0);
+
+// --- the signed report must NOT have picked up the new universal question ---
+await page.goto(inspectionUrl + '/report', { waitUntil: 'networkidle' });
+await page.waitForTimeout(700);
+const reportText = await page.locator('body').innerText();
+console.log('signed report unchanged by edit:', !reportText.includes('Smart thermostat paired'));
+await shot('22-report-after-template-edit');
+
+// but a NEW inspection on the same job does pick it up
+await page.goto(BASE + '/#/jobs', { waitUntil: 'networkidle' });
+await page.goto(BASE + '/', { waitUntil: 'networkidle' });
+await page.getByText('Marsh Rd').first().click();
+await page.waitForURL(/\/jobs\//);
+await page.getByRole('link', { name: 'Start inspection' }).click();
+await page.getByRole('button', { name: /Mitsubishi Ductless Hyper-Heat/ }).click();
+await page.waitForURL(/\/inspections\//);
+await page.locator('[data-active]').nth(1).click();
+await page.waitForTimeout(500);
+const freshText = await page.locator('body').innerText();
+console.log('new inspection has the edit:', freshText.includes('Smart thermostat paired'));
+await shot('23-new-inspection-has-edit');
+
 console.log('\nCONSOLE ERRORS:', errors.length ? errors : 'none');
 await browser.close();

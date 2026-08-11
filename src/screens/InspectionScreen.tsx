@@ -1,14 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
-import { useInspection, useJob, useStore } from '../lib/store';
-import { JOB_INFO_FIELDS, getTemplate, sectionsFor } from '../templates';
+import { useChecklist, useInspection, useJob, useStore } from '../lib/store';
 import {
   VISIT_TYPE_LABELS,
   getResponse,
   overallProgress,
   sectionProgress,
 } from '../lib/inspection';
-import type { Inspection, Response, Section } from '../lib/types';
+import type { FieldDef, Inspection, Response, Section } from '../lib/types';
 import { QuestionCard } from '../components/QuestionCard';
 import { PhotoViewer } from '../components/Photos';
 import { Badge, Button, Field, ProgressBar, Screen, TextInput, TopBar, cx, inputClass } from '../components/ui';
@@ -25,11 +24,14 @@ export function InspectionScreen() {
   const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const template = inspection ? getTemplate(inspection.templateId) : undefined;
-  const sections = useMemo(() => (template ? sectionsFor(template) : []), [template]);
+  const checklist = useChecklist(inspection);
+  const sections = useMemo(() => checklist?.sections ?? [], [checklist]);
 
   const steps = useMemo(
-    () => [{ id: INFO_STEP, title: 'Job Information' }, ...sections.map((s) => ({ id: s.id, title: s.title }))],
+    () => [
+      { id: INFO_STEP, title: 'Job Information' },
+      ...sections.map((section) => ({ id: section.id, title: section.title })),
+    ],
     [sections],
   );
 
@@ -61,7 +63,7 @@ export function InspectionScreen() {
     active?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
   }, [stepIndex]);
 
-  if (!inspection || !template) {
+  if (!inspection || !checklist) {
     return (
       <>
         <TopBar title="Inspection not found" back="/" />
@@ -77,7 +79,7 @@ export function InspectionScreen() {
     return <Navigate to={`/inspections/${inspection.id}/report`} replace />;
   }
 
-  const progress = overallProgress(inspection, template);
+  const progress = overallProgress(inspection, sections);
 
   function goToStep(id: string) {
     setSearchParams({ step: id }, { replace: true });
@@ -114,7 +116,7 @@ export function InspectionScreen() {
         <TopBar
           sticky={false}
           title={job?.name ?? 'Inspection'}
-          subtitle={`${VISIT_TYPE_LABELS[inspection.visitType]} · ${template.name}`}
+          subtitle={`${VISIT_TYPE_LABELS[inspection.visitType]} · ${checklist.templateName}`}
           back={job ? `/jobs/${job.id}` : '/'}
         />
         <div className="border-b border-ink-200 bg-white/95 backdrop-blur">
@@ -138,7 +140,7 @@ export function InspectionScreen() {
           <ProgressBar className="mt-1.5" value={progress.answered} total={progress.total} />
           <div ref={scrollRef} className="mt-2 flex gap-1.5 overflow-x-auto pb-2 no-scrollbar">
             {steps.map((step, index) => {
-              const section = sections.find((candidate) => candidate.id === step.id);
+              const section = sections.find((candidate: Section) => candidate.id === step.id);
               const stats = section ? sectionProgress(inspection, section) : null;
               const complete = stats ? stats.answered === stats.total && stats.total > 0 : false;
               return (
@@ -177,7 +179,11 @@ export function InspectionScreen() {
 
       <Screen className="pb-32">
         {currentStep?.id === INFO_STEP ? (
-          <JobInfoStep inspection={inspection} onChange={handleInfoChange} />
+          <JobInfoStep
+            inspection={inspection}
+            fields={checklist.infoFields}
+            onChange={handleInfoChange}
+          />
         ) : currentSection ? (
           <SectionStep
             section={currentSection}
@@ -222,9 +228,11 @@ export function InspectionScreen() {
 
 function JobInfoStep({
   inspection,
+  fields,
   onChange,
 }: {
   inspection: Inspection;
+  fields: FieldDef[];
   onChange: (fieldId: string, value: string) => void;
 }) {
   return (
@@ -234,7 +242,7 @@ function JobInfoStep({
         description="Captured on every inspection. Prefilled from the job record — confirm before you walk."
       />
       <div className="grid grid-cols-2 gap-3">
-        {JOB_INFO_FIELDS.map((field) => {
+        {fields.map((field) => {
           const value = inspection.info[field.id] ?? '';
           const invalid = field.required && !value.trim();
           return (

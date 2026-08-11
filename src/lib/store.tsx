@@ -15,10 +15,21 @@ import {
   jobsRepo,
   photosRepo,
   settingsRepo,
+  sharedRepo,
+  templatesRepo,
 } from './db';
 import { compressImage } from './image';
-import type { Inspection, Job, PhotoRecord, Settings, VisitType } from './types';
-import { getTemplate, JOB_INFO_FIELDS } from '../templates';
+import type {
+  Inspection,
+  Job,
+  PhotoRecord,
+  Settings,
+  SharedConfig,
+  Template,
+  VisitType,
+} from './types';
+import { BUILT_IN_TEMPLATES, defaultSharedConfig } from '../templates';
+import { resolveChecklist, snapshotOf } from './checklist';
 import { todayIso } from './inspection';
 
 function newId(prefix: string): string {
@@ -33,7 +44,10 @@ interface StoreValue {
   ready: boolean;
   jobs: Job[];
   inspections: Inspection[];
+  templates: Template[];
+  shared: SharedConfig;
   settings: Settings;
+  isAdmin: boolean;
   createJob: (input: Omit<Job, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Job>;
   updateJob: (id: string, patch: Partial<Job>) => Promise<void>;
   removeJob: (id: string) => Promise<void>;
@@ -44,6 +58,13 @@ interface StoreValue {
   removePhoto: (id: string) => Promise<void>;
   getPhoto: (id: string) => Promise<PhotoRecord | undefined>;
   saveSettings: (next: Settings) => Promise<void>;
+  saveTemplate: (template: Template) => Promise<void>;
+  createTemplate: (input?: Partial<Template>) => Promise<Template>;
+  duplicateTemplate: (id: string) => Promise<Template | undefined>;
+  removeTemplate: (id: string) => Promise<void>;
+  resetTemplate: (id: string) => Promise<void>;
+  saveShared: (next: SharedConfig) => Promise<void>;
+  resetShared: () => Promise<void>;
 }
 
 const StoreContext = createContext<StoreValue | null>(null);
@@ -54,19 +75,49 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [inspections, setInspections] = useState<Inspection[]>([]);
-  const [settings, setSettings] = useState<Settings>({ inspectorName: '', companyName: '' });
+  const [templates, setTemplates] = useState<Template[]>([]);
+  const [shared, setShared] = useState<SharedConfig>(() => defaultSharedConfig());
+  const [settings, setSettings] = useState<Settings>({
+    inspectorName: '',
+    companyName: '',
+    role: 'inspector',
+  });
 
   /** Pending debounced writes keyed by inspection id, flushed on unload. */
   const pendingWrites = useRef(new Map<string, { timer: number; record: Inspection }>());
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([jobsRepo.all(), inspectionsRepo.all(), settingsRepo.get()])
-      .then(([loadedJobs, loadedInspections, loadedSettings]) => {
+    Promise.all([
+      jobsRepo.all(),
+      inspectionsRepo.all(),
+      settingsRepo.get(),
+      templatesRepo.all(),
+      sharedRepo.get(),
+    ])
+      .then(async ([loadedJobs, loadedInspections, loadedSettings, loadedTemplates, loadedShared]) => {
+        // First run: seed the editable stores from the shipped checklists.
+        let seededTemplates = loadedTemplates;
+        if (seededTemplates.length === 0) {
+          const now = new Date().toISOString();
+          seededTemplates = BUILT_IN_TEMPLATES.map((template) => ({
+            ...template,
+            createdAt: now,
+            updatedAt: now,
+          }));
+          await Promise.all(seededTemplates.map((template) => templatesRepo.put(template)));
+        }
+        let seededShared = loadedShared;
+        if (!seededShared) {
+          seededShared = defaultSharedConfig();
+          await sharedRepo.put(seededShared);
+        }
         if (cancelled) return;
         setJobs(loadedJobs);
         setInspections(loadedInspections);
         setSettings(loadedSettings);
+        setTemplates(seededTemplates);
+        setShared(seededShared);
         setReady(true);
       })
       .catch((error) => {
@@ -138,9 +189,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const createInspection = useCallback<StoreValue['createInspection']>(
     async (jobId, templateId, visitType) => {
       const job = jobs.find((candidate) => candidate.id === jobId);
-      const template = getTemplate(templateId);
+      const template = templates.find((candidate) => candidate.id === templateId);
+      if (!template) throw new Error(`Unknown checklist: ${templateId}`);
       const info: Record<string, string> = {};
-      for (const field of JOB_INFO_FIELDS) {
+      for (const field of shared.infoFields) {
         if (field.fromJob && job) {
           const value = job[field.fromJob];
           if (typeof value === 'string') info[field.id] = value;
@@ -154,7 +206,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const inspection: Inspection = {
         id: newId('insp'),
         jobId,
-        templateId: template?.id ?? templateId,
+        templateId: template.id,
+        // Freeze the checklist as it stands today; later admin edits must not
+        // rewrite an inspection that is already under way or signed.
+        snapshot: snapshotOf(template, shared),
         visitType,
         status: 'in-progress',
         info,
@@ -166,7 +221,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setInspections((current) => [...current, inspection]);
       return inspection;
     },
-    [jobs, settings.inspectorName],
+    [jobs, templates, shared, settings.inspectorName],
   );
 
   const updateInspection = useCallback<StoreValue['updateInspection']>(
@@ -256,12 +311,92 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await settingsRepo.put(next);
   }, []);
 
+  const saveTemplate = useCallback<StoreValue['saveTemplate']>(async (template) => {
+    const next: Template = {
+      ...template,
+      version: (template.version ?? 1) + 1,
+      updatedAt: new Date().toISOString(),
+    };
+    await templatesRepo.put(next);
+    setTemplates((current) => {
+      const exists = current.some((candidate) => candidate.id === next.id);
+      return exists
+        ? current.map((candidate) => (candidate.id === next.id ? next : candidate))
+        : [...current, next];
+    });
+  }, []);
+
+  const createTemplate = useCallback<StoreValue['createTemplate']>(async (input) => {
+    const now = new Date().toISOString();
+    const template: Template = {
+      id: newId('tpl'),
+      name: 'Untitled checklist',
+      category: 'custom',
+      summary: '',
+      sections: [],
+      builtIn: false,
+      version: 1,
+      createdAt: now,
+      updatedAt: now,
+      ...input,
+    };
+    await templatesRepo.put(template);
+    setTemplates((current) => [...current, template]);
+    return template;
+  }, []);
+
+  const duplicateTemplate = useCallback<StoreValue['duplicateTemplate']>(
+    async (id) => {
+      const source = templates.find((candidate) => candidate.id === id);
+      if (!source) return undefined;
+      return createTemplate({
+        name: `${source.name} (copy)`,
+        category: source.category,
+        summary: source.summary,
+        sections: structuredClone(source.sections),
+      });
+    },
+    [templates, createTemplate],
+  );
+
+  const removeTemplate = useCallback<StoreValue['removeTemplate']>(async (id) => {
+    await templatesRepo.remove(id);
+    setTemplates((current) => current.filter((template) => template.id !== id));
+  }, []);
+
+  /** Restore a shipped checklist to the version that came with the app. */
+  const resetTemplate = useCallback<StoreValue['resetTemplate']>(async (id) => {
+    const original = BUILT_IN_TEMPLATES.find((template) => template.id === id);
+    if (!original) return;
+    const now = new Date().toISOString();
+    const restored: Template = { ...structuredClone(original), createdAt: now, updatedAt: now };
+    await templatesRepo.put(restored);
+    setTemplates((current) =>
+      current.map((template) => (template.id === id ? restored : template)),
+    );
+  }, []);
+
+  const saveShared = useCallback<StoreValue['saveShared']>(async (next) => {
+    const stamped: SharedConfig = { ...next, updatedAt: new Date().toISOString() };
+    await sharedRepo.put(stamped);
+    setShared(stamped);
+  }, []);
+
+  const resetShared = useCallback<StoreValue['resetShared']>(async () => {
+    const restored = defaultSharedConfig();
+    await sharedRepo.put(restored);
+    setShared(restored);
+  }, []);
+
   const value = useMemo<StoreValue>(
     () => ({
       ready,
       jobs,
       inspections,
+      templates,
+      shared,
       settings,
+      isAdmin: settings.role === 'admin',
       createJob,
       updateJob,
       removeJob,
@@ -272,11 +407,20 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       removePhoto,
       getPhoto,
       saveSettings,
+      saveTemplate,
+      createTemplate,
+      duplicateTemplate,
+      removeTemplate,
+      resetTemplate,
+      saveShared,
+      resetShared,
     }),
     [
       ready,
       jobs,
       inspections,
+      templates,
+      shared,
       settings,
       createJob,
       updateJob,
@@ -288,6 +432,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       removePhoto,
       getPhoto,
       saveSettings,
+      saveTemplate,
+      createTemplate,
+      duplicateTemplate,
+      removeTemplate,
+      resetTemplate,
+      saveShared,
+      resetShared,
     ],
   );
 
@@ -310,6 +461,23 @@ export function useInspection(inspectionId: string | undefined): Inspection | un
   return useMemo(
     () => inspections.find((inspection) => inspection.id === inspectionId),
     [inspections, inspectionId],
+  );
+}
+
+/** The sections and info fields an inspection should render, snapshot-aware. */
+export function useChecklist(inspection: Inspection | undefined) {
+  const { templates, shared } = useStore();
+  return useMemo(
+    () => (inspection ? resolveChecklist(inspection, templates, shared) : undefined),
+    [inspection, templates, shared],
+  );
+}
+
+export function useTemplate(templateId: string | undefined): Template | undefined {
+  const { templates } = useStore();
+  return useMemo(
+    () => templates.find((template) => template.id === templateId),
+    [templates, templateId],
   );
 }
 

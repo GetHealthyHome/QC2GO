@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
-import { getTemplate } from '../templates';
 import { overallProgress, relativeTime } from '../lib/inspection';
+import { resolveChecklist } from '../lib/checklist';
 import type { Inspection, Job } from '../lib/types';
 import { Badge, Button, Card, EmptyState, ProgressBar, Screen, TopBar, cx, inputClass } from '../components/ui';
-import { AlertIcon, ClipboardIcon, MapPinIcon, PlusIcon, SearchIcon, SettingsIcon, UserIcon } from '../components/Icons';
+import { AlertIcon, ChevronRightIcon, ClipboardIcon, MapPinIcon, PlusIcon, SearchIcon, SettingsIcon, UserIcon } from '../components/Icons';
 
 interface JobSummary {
   job: Job;
@@ -25,7 +25,7 @@ const FILTERS: Array<{ id: Filter; label: string }> = [
 ];
 
 export function JobsScreen() {
-  const { jobs, inspections } = useStore();
+  const { jobs, inspections, templates, shared, isAdmin } = useStore();
   const [query, setQuery] = useState('');
   const [filter, setFilter] = useState<Filter>('active');
 
@@ -37,8 +37,8 @@ export function JobsScreen() {
         let inProgress = 0;
         let completed = 0;
         for (const inspection of jobInspections) {
-          const template = getTemplate(inspection.templateId);
-          if (template) openDeficiencies += overallProgress(inspection, template).failed;
+          const checklist = resolveChecklist(inspection, templates, shared);
+          if (checklist) openDeficiencies += overallProgress(inspection, checklist.sections).failed;
           if (inspection.status === 'completed') completed += 1;
           else inProgress += 1;
         }
@@ -50,7 +50,7 @@ export function JobsScreen() {
         return { job, inspections: jobInspections, openDeficiencies, inProgress, completed, lastActivity };
       })
       .sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
-  }, [jobs, inspections]);
+  }, [jobs, inspections, templates, shared]);
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -117,6 +117,27 @@ export function JobsScreen() {
                   Open deficiencies
                 </p>
               </Card>
+            </div>
+
+            <div className="mb-3 flex gap-2">
+              <Link
+                to="/completed"
+                className="flex flex-1 items-center gap-2 rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-[13px] font-semibold text-ink-700 active:bg-ink-50"
+              >
+                <ClipboardIcon className="size-4 shrink-0 text-ink-400" />
+                <span className="flex-1">Completed</span>
+                <ChevronRightIcon className="size-4 shrink-0 text-ink-300" />
+              </Link>
+              {isAdmin ? (
+                <Link
+                  to="/checklists"
+                  className="flex flex-1 items-center gap-2 rounded-xl border border-ink-200 bg-white px-3.5 py-2.5 text-[13px] font-semibold text-ink-700 active:bg-ink-50"
+                >
+                  <SettingsIcon className="size-4 shrink-0 text-ink-400" />
+                  <span className="flex-1">Checklists</span>
+                  <ChevronRightIcon className="size-4 shrink-0 text-ink-300" />
+                </Link>
+              ) : null}
             </div>
 
             <div className="relative mb-3">
@@ -241,17 +262,18 @@ function JobCard({ summary }: { summary: JobSummary }) {
 }
 
 function InProgressStrip({ inspections }: { inspections: Inspection[] }) {
+  const { templates, shared } = useStore();
   const active = inspections.filter((inspection) => inspection.status !== 'completed');
   return (
     <div className="mt-2 flex flex-col gap-2">
       {active.map((inspection) => {
-        const template = getTemplate(inspection.templateId);
-        if (!template) return null;
-        const progress = overallProgress(inspection, template);
+        const checklist = resolveChecklist(inspection, templates, shared);
+        if (!checklist) return null;
+        const progress = overallProgress(inspection, checklist.sections);
         return (
           <div key={inspection.id}>
             <div className="mb-1 flex items-center justify-between text-[11px] font-medium text-ink-500">
-              <span className="truncate">{template.name}</span>
+              <span className="truncate">{checklist.templateName}</span>
               <span className="shrink-0 tabular-nums">
                 {progress.answered}/{progress.total}
               </span>

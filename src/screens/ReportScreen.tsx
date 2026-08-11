@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useInspection, useJob, useStore } from '../lib/store';
-import { JOB_INFO_FIELDS, getTemplate, sectionsFor } from '../templates';
+import { useChecklist, useInspection, useJob, useStore } from '../lib/store';
 import {
   VISIT_TYPE_LABELS,
   formatDate,
@@ -11,7 +10,7 @@ import {
   overallProgress,
   sectionProgress,
 } from '../lib/inspection';
-import type { Answer, SignatureRecord } from '../lib/types';
+import type { Answer, Question, Section, SignatureRecord } from '../lib/types';
 import { PhotoViewer, usePhotoUrl } from '../components/Photos';
 import { Badge, Button, Card, Screen, TopBar, cx } from '../components/ui';
 import { AlertIcon, CheckIcon, MinusIcon, PenIcon, PrinterIcon, ShareIcon, XIcon } from '../components/Icons';
@@ -23,10 +22,10 @@ export function ReportScreen() {
   const { updateInspection, settings } = useStore();
   const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
 
-  const template = inspection ? getTemplate(inspection.templateId) : undefined;
-  const sections = useMemo(() => (template ? sectionsFor(template) : []), [template]);
+  const checklist = useChecklist(inspection);
+  const sections = useMemo(() => checklist?.sections ?? [], [checklist]);
 
-  if (!inspection || !template) {
+  if (!inspection || !checklist) {
     return (
       <>
         <TopBar title="Report not found" back="/" />
@@ -37,7 +36,7 @@ export function ReportScreen() {
     );
   }
 
-  const progress = overallProgress(inspection, template);
+  const progress = overallProgress(inspection, sections);
   const completed = inspection.status === 'completed';
 
   function exportJson() {
@@ -46,7 +45,7 @@ export function ReportScreen() {
       exportedAt: new Date().toISOString(),
       company: settings.companyName || undefined,
       job,
-      inspection: { ...inspection, template: template!.name },
+      inspection: { ...inspection, template: checklist!.templateName },
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -87,7 +86,7 @@ export function ReportScreen() {
         <div className="print-only mb-4">
           <p className="text-lg font-bold">{settings.companyName || 'Quality Control Report'}</p>
           <p className="text-sm">
-            {template.name} — {VISIT_TYPE_LABELS[inspection.visitType]}
+            {checklist.templateName} — {VISIT_TYPE_LABELS[inspection.visitType]}
           </p>
         </div>
 
@@ -100,7 +99,7 @@ export function ReportScreen() {
               <h2 className="mt-0.5 text-lg leading-tight font-bold text-ink-900">
                 {job?.name ?? 'Job'}
               </h2>
-              <p className="text-[13px] text-ink-500">{template.name}</p>
+              <p className="text-[13px] text-ink-500">{checklist.templateName}</p>
             </div>
             <Badge tone={completed ? 'pass' : 'warn'}>
               {completed ? 'Completed' : 'In progress'}
@@ -123,7 +122,7 @@ export function ReportScreen() {
 
         <ReportSection title="Job Information">
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5">
-            {JOB_INFO_FIELDS.map((field) => {
+            {checklist.infoFields.map((field) => {
               const value = inspection.info[field.id];
               if (!value?.trim()) return null;
               return (
@@ -148,7 +147,7 @@ export function ReportScreen() {
           </ReportSection>
         ) : null}
 
-        {sections.map((section) => {
+        {sections.map((section: Section) => {
           const stats = sectionProgress(inspection, section);
           return (
             <ReportSection
@@ -166,7 +165,7 @@ export function ReportScreen() {
               }
             >
               <ul className="flex flex-col divide-y divide-ink-100">
-                {section.questions.map((question) => {
+                {section.questions.map((question: Question) => {
                   const response = getResponse(inspection, question.id);
                   if (!isScored(question)) {
                     return (

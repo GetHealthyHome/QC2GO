@@ -1,7 +1,7 @@
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useJob, useJobInspections, useStore } from '../lib/store';
-import { getTemplate } from '../templates';
 import { VISIT_TYPE_LABELS, formatDate, overallProgress, relativeTime } from '../lib/inspection';
+import { resolveChecklist } from '../lib/checklist';
 import type { Inspection } from '../lib/types';
 import { Badge, Button, Card, EmptyState, ProgressBar, Screen, TopBar, cx } from '../components/ui';
 import {
@@ -131,10 +131,9 @@ export function JobScreen() {
 }
 
 function InspectionRow({ inspection }: { inspection: Inspection }) {
-  const template = getTemplate(inspection.templateId);
-  const progress = template
-    ? overallProgress(inspection, template)
-    : { total: 0, answered: 0, failed: 0, incomplete: 0 };
+  const { templates, shared } = useStore();
+  const checklist = resolveChecklist(inspection, templates, shared);
+  const progress = overallProgress(inspection, checklist?.sections ?? []);
   const done = inspection.status === 'completed';
   const to = done
     ? `/inspections/${inspection.id}/report`
@@ -159,7 +158,7 @@ function InspectionRow({ inspection }: { inspection: Inspection }) {
             ) : null}
           </div>
           <p className="mt-1 text-[15px] leading-tight font-semibold text-ink-900">
-            {template?.name ?? 'Unknown checklist'}
+            {checklist?.templateName ?? 'Unknown checklist'}
           </p>
           <p className="mt-0.5 text-xs text-ink-500">
             {done

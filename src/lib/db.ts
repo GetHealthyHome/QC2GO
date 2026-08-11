@@ -1,17 +1,18 @@
-import type { Inspection, Job, PhotoRecord, Settings } from './types';
+import type { Inspection, Job, PhotoRecord, Settings, SharedConfig, Template } from './types';
 
 /**
  * Everything lives in IndexedDB so an inspection survives a dead cell signal in a
  * crawlspace, a backgrounded tab, or a phone that reboots mid-walkthrough.
  */
 const DB_NAME = 'qc2go';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export const STORES = {
   jobs: 'jobs',
   inspections: 'inspections',
   photos: 'photos',
   settings: 'settings',
+  templates: 'templates',
 } as const;
 
 type StoreName = (typeof STORES)[keyof typeof STORES];
@@ -37,6 +38,9 @@ function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORES.settings)) {
         db.createObjectStore(STORES.settings, { keyPath: 'key' });
+      }
+      if (!db.objectStoreNames.contains(STORES.templates)) {
+        db.createObjectStore(STORES.templates, { keyPath: 'id' });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -96,7 +100,16 @@ export const photosRepo = {
   remove: (id: string) => tx(STORES.photos, 'readwrite', (s) => s.delete(id)),
 };
 
+export const templatesRepo = {
+  all: () => tx<Template[]>(STORES.templates, 'readonly', (s) => s.getAll()),
+  put: (template: Template) => tx(STORES.templates, 'readwrite', (s) => s.put(template)),
+  remove: (id: string) => tx(STORES.templates, 'readwrite', (s) => s.delete(id)),
+};
+
 const SETTINGS_KEY = 'app';
+const SHARED_KEY = 'shared';
+
+const DEFAULT_SETTINGS: Settings = { inspectorName: '', companyName: '', role: 'inspector' };
 
 export const settingsRepo = {
   async get(): Promise<Settings> {
@@ -105,10 +118,24 @@ export const settingsRepo = {
       'readonly',
       (s) => s.get(SETTINGS_KEY),
     );
-    return row?.value ?? { inspectorName: '', companyName: '' };
+    return { ...DEFAULT_SETTINGS, ...row?.value };
   },
   put: (value: Settings) =>
     tx(STORES.settings, 'readwrite', (s) => s.put({ key: SETTINGS_KEY, value })),
+};
+
+/** Shared config lives in the settings store since there is exactly one row. */
+export const sharedRepo = {
+  async get(): Promise<SharedConfig | undefined> {
+    const row = await tx<{ key: string; value: SharedConfig } | undefined>(
+      STORES.settings,
+      'readonly',
+      (s) => s.get(SHARED_KEY),
+    );
+    return row?.value;
+  },
+  put: (value: SharedConfig) =>
+    tx(STORES.settings, 'readwrite', (s) => s.put({ key: SHARED_KEY, value })),
 };
 
 /** Remove an inspection together with every photo attached to it. */

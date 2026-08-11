@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { useInspection, useJob, useStore } from '../lib/store';
-import { getTemplate } from '../templates';
+import { useChecklist, useInspection, useJob, useStore } from '../lib/store';
 import {
   VISIT_TYPE_LABELS,
   completionBlockers,
@@ -24,22 +23,25 @@ export function ReviewScreen() {
   const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
   const [attempted, setAttempted] = useState(false);
 
-  const template = inspection ? getTemplate(inspection.templateId) : undefined;
+  const checklist = useChecklist(inspection);
 
   const blockers = useMemo(
-    () => (inspection && template ? completionBlockers(inspection, template) : []),
-    [inspection, template],
+    () =>
+      inspection && checklist
+        ? completionBlockers(inspection, checklist.sections, checklist.infoFields)
+        : [],
+    [inspection, checklist],
   );
   const failures = useMemo(
-    () => (inspection && template ? deficiencies(inspection, template) : []),
-    [inspection, template],
+    () => (inspection && checklist ? deficiencies(inspection, checklist.sections) : []),
+    [inspection, checklist],
   );
   const advisories = useMemo(
-    () => (inspection && template ? missingEvidencePhotos(inspection, template) : []),
-    [inspection, template],
+    () => (inspection && checklist ? missingEvidencePhotos(inspection, checklist.sections) : []),
+    [inspection, checklist],
   );
 
-  if (!inspection || !template) {
+  if (!inspection || !checklist) {
     return (
       <>
         <TopBar title="Inspection not found" back="/" />
@@ -50,7 +52,7 @@ export function ReviewScreen() {
     );
   }
 
-  const progress = overallProgress(inspection, template);
+  const progress = overallProgress(inspection, checklist.sections);
   const canComplete = blockers.length === 0;
   const requiresCustomerSignature =
     inspection.visitType === 'final-walkthrough' && inspection.info.customerPresent === 'Yes';
@@ -83,7 +85,7 @@ export function ReviewScreen() {
           <p className="text-[11px] font-semibold tracking-wide text-ink-400 uppercase">
             {VISIT_TYPE_LABELS[inspection.visitType]}
           </p>
-          <p className="mt-0.5 text-[15px] font-bold text-ink-900">{template.name}</p>
+          <p className="mt-0.5 text-[15px] font-bold text-ink-900">{checklist.templateName}</p>
           <div className="mt-3 grid grid-cols-4 gap-2 text-center">
             <Stat label="Passed" value={progress.passed} tone="pass" />
             <Stat label="Failed" value={progress.failed} tone="fail" />

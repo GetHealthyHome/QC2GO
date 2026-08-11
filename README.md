@@ -25,9 +25,11 @@ checklists:
    cleanliness, penetration sealing, CO/smoke alarms, combustion safety, customer
    walkthrough, and handoff documentation.
 
-Adding a standard to `src/templates/shared.ts` adds it to every checklist at once.
+Both are editable by an admin in one place, so a new company-wide standard lands
+on every checklist at once.
 
-**Then the system-specific checklist:**
+**Then the system-specific checklist.** These five ship with the app and seed the
+editable store on first run; admins can change them or add their own.
 
 | Checklist | Covers |
 | --- | --- |
@@ -45,6 +47,40 @@ Adding a standard to `src/templates/shared.ts` adds it to every checklist at onc
   (data plates, micron gauges, test screens). Advisory, listed at review, never blocking.
 - **Measurement** — a recorded value rather than a judgement (CFM50, micron
   reading, static pressure, delta-T). Shown inline and carried into the report.
+
+## Roles
+
+Two roles, chosen in Settings today and backed by Supabase auth once connected:
+
+- **Inspector** — runs inspections, and recalls any past one from the Completed
+  screen (searchable by job, customer, checklist, or inspector).
+- **Admin** — everything an inspector can do, plus the checklist editor.
+
+## Admin edit mode
+
+Admins build and rework checklists in the app, no code change needed:
+
+- Create a checklist from scratch, or duplicate an existing one.
+- Add, rename, reorder, and delete sections.
+- Add, edit, reorder, and delete checkpoints; set each one's type (Yes/No,
+  measurement with a unit, or free text) and its **Critical** and **Photo for
+  record** flags.
+- Edit the shared Job Information fields — label, type, required, choices,
+  half-width — and the Universal QC Standards block that opens every checklist.
+- Archive a checklist to hide it from inspectors without deleting history.
+- Reset any shipped checklist back to the version that came with the app.
+
+Reordering uses up/down buttons rather than drag handles — reliable on a phone,
+with gloves, one-handed.
+
+### Edits never rewrite history
+
+Every inspection captures its own copy of the checklist the moment it starts.
+Rewording a question or reordering a section changes what future inspections ask;
+it does not touch an inspection already under way or signed. The smoke test
+asserts exactly this: after adding a checkpoint to the universal section, a
+previously signed report is unchanged while a new inspection on the same job
+picks it up.
 
 ### Sign-off rules
 
@@ -65,6 +101,19 @@ The completed inspection renders as a full report — job information, summary n
 every section with pass/fail marks, deficiency explanations with photos, measured
 values, and both signatures. Print styles are set up so **Print → Save as PDF**
 produces the customer-facing document. Raw data exports as JSON.
+
+## Backend
+
+The app is local-first and works standalone today. `supabase/migrations/0001_init.sql`
+is the target schema — tables, roles, row-level security, a private photo storage
+bucket, and an office summary view. It has been executed against PostgreSQL 16 and
+runs clean. See [`supabase/README.md`](supabase/README.md) for setup and for what
+is still to build.
+
+Google Sheets was considered and rejected as the store: it cannot hold photo
+evidence, a browser app cannot write to it without a server in front, and a
+60-checkpoint inspection does not flatten into a row. A one-way mirror from
+Supabase into a Sheet remains a good way to give the office a spreadsheet view.
 
 ## Offline and storage
 
@@ -111,14 +160,20 @@ src/
     store.tsx       React context over the repos, with debounced write-through
     inspection.ts   progress, deficiencies, and sign-off blocker rules
     image.ts        photo downscaling
+    checklist.ts    snapshot capture, checklist resolution, reorder helpers
   templates/
-    shared.ts       job information fields + Universal QC Standards
-    *.ts            the five system checklists
-  components/       question card, photo capture, signature pad, UI primitives
-  screens/          jobs, job, template picker, inspection runner, review, report, settings
+    shared.ts       seed job information fields + Universal QC Standards
+    *.ts            the five seed checklists
+  components/       question card, photo capture, signature pad, section editor, UI primitives
+  screens/          jobs, job, template picker, inspection runner, review, report,
+                    completed, checklists, checklist editor, shared editor, settings
+supabase/
+  migrations/       schema, RLS, storage bucket, summary view
 ```
 
 ### Adding a checklist
 
-Add a file to `src/templates/` exporting a `Template`, then register it in
-`src/templates/index.ts`. The shared sections are prepended automatically.
+Use the in-app editor as an admin. To change what ships by default, add a file to
+`src/templates/` exporting a `Template` and register it in `src/templates/index.ts` —
+those seed the editable store on first run and back the "reset to shipped version"
+action.

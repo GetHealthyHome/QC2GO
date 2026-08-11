@@ -8,6 +8,10 @@ import { InspectionScreen } from './screens/InspectionScreen';
 import { ReviewScreen } from './screens/ReviewScreen';
 import { ReportScreen } from './screens/ReportScreen';
 import { SettingsScreen } from './screens/SettingsScreen';
+import { ChecklistsScreen } from './screens/ChecklistsScreen';
+import { ChecklistEditorScreen } from './screens/ChecklistEditorScreen';
+import { SharedEditorScreen } from './screens/SharedEditorScreen';
+import { CompletedScreen } from './screens/CompletedScreen';
 import { OfflineBanner } from './components/OfflineBanner';
 
 export default function App() {
@@ -36,6 +40,10 @@ export default function App() {
         <Route path="/inspections/:inspectionId" element={<InspectionScreen />} />
         <Route path="/inspections/:inspectionId/review" element={<ReviewScreen />} />
         <Route path="/inspections/:inspectionId/report" element={<ReportScreen />} />
+        <Route path="/completed" element={<CompletedScreen />} />
+        <Route path="/checklists" element={<ChecklistsScreen />} />
+        <Route path="/checklists/shared" element={<SharedEditorScreen />} />
+        <Route path="/checklists/:templateId" element={<ChecklistEditorScreen />} />
         <Route path="/settings" element={<SettingsScreen />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

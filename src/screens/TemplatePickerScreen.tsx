@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useJob, useStore } from '../lib/store';
-import { CATEGORY_LABELS, TEMPLATES, questionCount } from '../templates';
+import { categoryLabel } from '../templates';
+import { questionCount } from '../lib/checklist';
 import { VISIT_TYPE_LABELS } from '../lib/inspection';
 import type { VisitType } from '../lib/types';
 import { Badge, Button, Card, Screen, TopBar, cx } from '../components/ui';
@@ -19,9 +20,10 @@ export function TemplatePickerScreen() {
   const { jobId } = useParams();
   const navigate = useNavigate();
   const job = useJob(jobId);
-  const { createInspection } = useStore();
+  const { createInspection, templates, shared } = useStore();
   const [visitType, setVisitType] = useState<VisitType>('final-walkthrough');
   const [starting, setStarting] = useState(false);
+  const available = templates.filter((template) => !template.archived);
 
   if (!job) {
     return (
@@ -86,7 +88,7 @@ export function TemplatePickerScreen() {
           Every checklist opens with the shared job information and Universal QC Standards section.
         </p>
         <ul className="flex flex-col gap-2.5">
-          {TEMPLATES.map((template) => (
+          {available.map((template) => (
             <Card as="li" key={template.id} className="active:bg-ink-50">
               <button
                 type="button"
@@ -95,13 +97,13 @@ export function TemplatePickerScreen() {
                 className="flex w-full items-center gap-3 p-4 text-left disabled:opacity-60"
               >
                 <div className="min-w-0 flex-1">
-                  <Badge tone="brand">{CATEGORY_LABELS[template.category]}</Badge>
+                  <Badge tone="brand">{categoryLabel(template.category)}</Badge>
                   <p className="mt-1.5 text-[15px] leading-tight font-bold text-ink-900">
                     {template.name}
                   </p>
                   <p className="mt-1 text-[13px] leading-snug text-ink-500">{template.summary}</p>
                   <p className="mt-1.5 text-xs font-medium text-ink-400">
-                    {questionCount(template)} checkpoints
+                    {questionCount(template, shared)} checkpoints
                   </p>
                 </div>
                 <ChevronRightIcon className="size-5 shrink-0 text-ink-300" />

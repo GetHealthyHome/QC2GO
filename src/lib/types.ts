@@ -47,12 +47,8 @@ export interface FieldDef {
   half?: boolean;
 }
 
-export type TemplateCategory =
-  | 'home-performance'
-  | 'indoor-air-quality'
-  | 'mitsubishi-ducted'
-  | 'mitsubishi-ductless'
-  | 'quilt';
+/** Free-form so an admin can introduce a system type without a code change. */
+export type TemplateCategory = string;
 
 export interface Template {
   id: string;
@@ -61,6 +57,37 @@ export interface Template {
   summary: string;
   /** Template-specific sections. The shared sections are prepended at runtime. */
   sections: Section[];
+  /** Seeded from code. Built-ins can be edited, but reset restores them. */
+  builtIn?: boolean;
+  archived?: boolean;
+  /** Bumped on every admin edit; stamped into the inspection snapshot. */
+  version?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+/**
+ * The blocks every checklist shares. Editable by admins in one place so a new
+ * company-wide standard lands on all checklists at once.
+ */
+export interface SharedConfig {
+  infoFields: FieldDef[];
+  universalSection: Section;
+  updatedAt: string;
+}
+
+/**
+ * What the checklist looked like when the inspection was started. A signed QC
+ * record must not change because an admin later reworded a question, so the
+ * inspection carries its own copy rather than pointing at the live template.
+ */
+export interface TemplateSnapshot {
+  templateId: string;
+  templateName: string;
+  templateVersion: number;
+  infoFields: FieldDef[];
+  sections: Section[];
+  capturedAt: string;
 }
 
 export type VisitType = 'site-visit' | 'final-walkthrough' | 'punch-recheck';
@@ -107,6 +134,8 @@ export interface Inspection {
   id: string;
   jobId: string;
   templateId: string;
+  /** Absent on inspections created before snapshots existed; resolved by id then. */
+  snapshot?: TemplateSnapshot;
   visitType: VisitType;
   status: InspectionStatus;
   /** Values for the shared job-information fields, keyed by FieldDef id. */
@@ -129,7 +158,14 @@ export interface PhotoRecord {
   createdAt: string;
 }
 
+/**
+ * Admins build and edit checklists; inspectors run them and read past reports.
+ * Enforced locally as a UI mode only — the real boundary is Supabase RLS.
+ */
+export type Role = 'admin' | 'inspector';
+
 export interface Settings {
   inspectorName: string;
   companyName: string;
+  role: Role;
 }

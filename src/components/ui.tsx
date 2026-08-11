@@ -1,4 +1,10 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from 'react';
+import { useLayoutEffect, useRef } from 'react';
+import type {
+  ButtonHTMLAttributes,
+  InputHTMLAttributes,
+  ReactNode,
+  TextareaHTMLAttributes,
+} from 'react';
 import { Link } from 'react-router-dom';
 
 export function cx(...values: Array<string | false | null | undefined>): string {
@@ -169,6 +175,35 @@ export const inputClass =
 
 export function TextInput({ className, ...props }: InputHTMLAttributes<HTMLInputElement>) {
   return <input className={cx(inputClass, className)} {...props} />;
+}
+
+/**
+ * Grows to fit its content. Checklist questions run long and a fixed-height box
+ * hides the tail of the sentence an admin is trying to read.
+ */
+export function AutoTextarea({
+  value,
+  className,
+  ...props
+}: TextareaHTMLAttributes<HTMLTextAreaElement> & { value: string }) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  useLayoutEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    node.style.height = 'auto';
+    node.style.height = `${node.scrollHeight}px`;
+  }, [value]);
+
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      rows={1}
+      className={cx(inputClass, 'resize-none overflow-hidden', className)}
+      {...props}
+    />
+  );
 }
 
 export function TopBar({

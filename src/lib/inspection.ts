@@ -1,13 +1,12 @@
 import type {
   Answer,
+  FieldDef,
   Inspection,
   Question,
   Response,
   Section,
-  Template,
   VisitType,
 } from './types';
-import { JOB_INFO_FIELDS, sectionsFor } from '../templates';
 
 export const EMPTY_RESPONSE: Response = { answer: null, photoIds: [] };
 
@@ -72,8 +71,8 @@ export function sectionProgress(inspection: Inspection, section: Section): Secti
   return progress;
 }
 
-export function overallProgress(inspection: Inspection, template: Template): SectionProgress {
-  return sectionsFor(template).reduce<SectionProgress>((totals, section) => {
+export function overallProgress(inspection: Inspection, sections: Section[]): SectionProgress {
+  return sections.reduce<SectionProgress>((totals, section) => {
     const progress = sectionProgress(inspection, section);
     return {
       total: totals.total + progress.total,
@@ -93,9 +92,9 @@ export interface Deficiency {
   response: Response;
 }
 
-export function deficiencies(inspection: Inspection, template: Template): Deficiency[] {
+export function deficiencies(inspection: Inspection, sections: Section[]): Deficiency[] {
   const found: Deficiency[] = [];
-  for (const section of sectionsFor(template)) {
+  for (const section of sections) {
     for (const question of section.questions) {
       const response = getResponse(inspection, question.id);
       if (response.answer === 'no') {
@@ -112,9 +111,9 @@ export function deficiencies(inspection: Inspection, template: Template): Defici
 }
 
 /** Pass items marked as needing an evidence photo that do not have one. Advisory, not blocking. */
-export function missingEvidencePhotos(inspection: Inspection, template: Template): Deficiency[] {
+export function missingEvidencePhotos(inspection: Inspection, sections: Section[]): Deficiency[] {
   const found: Deficiency[] = [];
-  for (const section of sectionsFor(template)) {
+  for (const section of sections) {
     for (const question of section.questions) {
       if (!question.photoOnPass) continue;
       const response = getResponse(inspection, question.id);
@@ -140,16 +139,20 @@ export interface Blocker {
  * Unanswered questions and undocumented No answers are hard stops by design —
  * a QC record with a bare "No" and no evidence is worse than no record at all.
  */
-export function completionBlockers(inspection: Inspection, template: Template): Blocker[] {
+export function completionBlockers(
+  inspection: Inspection,
+  sections: Section[],
+  infoFields: FieldDef[],
+): Blocker[] {
   const blockers: Blocker[] = [];
 
-  for (const field of JOB_INFO_FIELDS) {
+  for (const field of infoFields) {
     if (field.required && !inspection.info[field.id]?.trim()) {
       blockers.push({ kind: 'info', label: `${field.label} is required` });
     }
   }
 
-  for (const section of sectionsFor(template)) {
+  for (const section of sections) {
     for (const question of section.questions) {
       if (!isScored(question)) continue;
       const response = getResponse(inspection, question.id);
@@ -195,10 +198,6 @@ export function completionBlockers(inspection: Inspection, template: Template): 
   }
 
   return blockers;
-}
-
-export function inspectionTitle(template: Template | undefined, inspection: Inspection): string {
-  return `${VISIT_TYPE_LABELS[inspection.visitType]} — ${template?.name ?? 'Unknown checklist'}`;
 }
 
 export function formatDate(iso: string | undefined): string {

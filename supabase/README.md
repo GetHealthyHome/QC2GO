@@ -1,6 +1,6 @@
 # Supabase backend
 
-Two migrations:
+Three migrations:
 
 - **`0001_init.sql`** — tables, roles, row-level security, the photo storage
   bucket, and an office summary view.
@@ -8,13 +8,12 @@ Two migrations:
   in line with the app's model: no job name, job notes became the work scope, a
   customer carries its checklist ids and the GPS point captured on site, and an
   inspection carries the visit date it covers.
+- **`0003_sync.sql`** — what the sync layer needs: somewhere to keep the
+  salesperson and team-leader pick lists, tombstones so a delete on one device
+  reaches another, and the indexes a pull actually reads.
 
-Both have been executed end-to-end against PostgreSQL 16 — they run clean, and
-the policies, triggers, cascade deletes, summary view, and snapshot isolation all
-behave. `0001` is already applied to the live project; `0002` applies on merge.
-
-The app does **not** write to Supabase yet. Everything still runs local-first out
-of IndexedDB — sign-in is real, storage is not. See "Still to build" below.
+All three have been replayed end-to-end from an empty PostgreSQL 16 database.
+`0001` and `0002` are applied to the live project; `0003` applies on merge.
 
 ## Setting it up
 
@@ -71,6 +70,11 @@ so interior photos of customers' homes are never publicly addressable.
 computed from the responses JSON — the view to point a dashboard or a Google
 Sheets mirror at.
 
+**`tombstones`** records what was deleted, so a device that was offline at the
+time finds out. Readable by everyone signed in and writable by nobody: the rows
+are written by a `security definer` trigger, and there is deliberately no insert
+policy.
+
 ## Who can do what
 
 | | Inspector | Admin |
@@ -101,6 +105,10 @@ Both are left as they are, deliberately:
 - `handle_new_user()` returns `trigger`. PostgreSQL refuses to call a trigger
   function directly, so there is nothing to invoke. Touching its grants risks the
   signup path for no gain.
+- `record_tombstone()` in `0003` is the same case: `security definer` so the
+  marker is written by the trigger rather than by the caller, and `trigger`
+  returning, so it cannot be invoked directly either. That is what lets the
+  tombstones table have no insert policy at all.
 
 `touch_updated_at()` was the one worth fixing — `0002` pins its `search_path`.
 
@@ -116,17 +124,61 @@ VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
 
 Both come from **Project Settings → API**. Use the publishable key only.
 
-With them set, every route sits behind a sign-in and the role comes from
-`profiles.role`. Without them the app runs local-only and shows a Local mode
-banner.
+With them set, every route sits behind a sign-in, the role comes from
+`profiles.role`, and sync starts under that account. Without them the app runs
+local-only, shows a Local mode banner, and the outbox is never written to.
+
+## How sync works
+
+IndexedDB is still the write path. An inspector in a crawlspace has to be able to
+answer a question, take a photo and sign off with no signal at all, so nothing
+ever waits on the network. A local write lands immediately and leaves a note in
+an outbox; the engine in `src/lib/sync.ts` drains that outbox whenever there is a
+connection and a signed-in account, then pulls back whatever changed elsewhere.
+
+It runs on reconnect, when the tab becomes visible, every five minutes, and a
+second or so after a change. Settings shows what is pending.
+
+**Outbox entries are keyed `<entity>:<id>`**, so answering the same question
+eight times collapses to one upload instead of eight.
+
+**Pushes go in dependency order** — checklist, customer, inspection, photo —
+because the foreign keys mean an inspection cannot arrive before the customer it
+belongs to. An inspection whose checklist is not on the server uploads with a
+null `template_id` rather than failing; the frozen snapshot still names the
+checklist, and that is what reports read.
+
+**Conflicts resolve last-write-wins.** Two people editing one record at the same
+moment is not a real scenario here — one person walks one job. The exception is a
+signed inspection, and that is handled by the server rather than by trust: the
+`inspections_update_own_open` policy refuses any edit to a completed record
+except by an admin, so a stale device cannot overwrite a signed report. A refused
+change is kept and surfaced in Settings, not dropped silently.
+
+**Deletes travel as tombstones.** A pull asks "what changed since I last
+looked?", and a row that no longer exists cannot answer. Every delete leaves a
+marker, written by trigger rather than by the client — so cascades are caught
+too, and a device cannot forge one and make another device drop data.
+
+**Photos are pulled as records, not bytes.** They are by far the heaviest thing
+here, so the file is fetched the first time something renders it and cached
+locally after that. Deleting a customer cascades the rows server-side but not the
+files, so the bucket keys are collected before the local records go.
+
+**The pull watermark is kept per table**, and only ever advances to a timestamp
+the server itself returned. A single shared watermark taken from whichever table
+answered first could skip past rows another was still writing, and a device whose
+clock ran fast would skip rows it had never seen.
+
+`npm run check:sync-mappers` round-trips every record through its database row
+and back. A column renamed in a migration but not in `src/lib/syncMap.ts` is not
+a type error — the field simply arrives back empty — and this is what catches it.
 
 ## Still to build
 
-**Sync.** Inspections are still written to IndexedDB and stay on the device that
-recorded them — signing in does not yet upload anything. Keeping IndexedDB as the
-write path is what preserves working offline in a crawlspace, so the remaining
-work is a queue that pushes to these tables when a signal returns, not a rewrite
-to fetch-on-demand.
+**Storage cleanup for abandoned uploads.** A photo whose row upload fails after
+the file has already gone to the bucket leaves the file behind. Rare, and it
+costs storage rather than correctness, but there is no sweeper for it yet.
 
-Until that lands, treat the database as provisioned but empty: auth is real,
-storage is not yet.
+**Presence of other inspectors.** Nothing indicates that someone else is working
+the same job right now; the first you know is when their inspection appears.

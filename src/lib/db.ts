@@ -1,11 +1,23 @@
-import type { Customer, Inspection, PhotoRecord, Settings, SharedConfig, Template } from './types';
+import type {
+  Customer,
+  Inspection,
+  OutboxEntry,
+  PhotoRecord,
+  Settings,
+  SharedConfig,
+  SyncState,
+  Template,
+} from './types';
 
 /**
  * Everything lives in IndexedDB so an inspection survives a dead cell signal in a
  * crawlspace, a backgrounded tab, or a phone that reboots mid-walkthrough.
+ *
+ * This stays the write path even with a backend configured. Sync reads out of
+ * here and pushes; it never sits in front of a save.
  */
 const DB_NAME = 'qc2go';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 export const STORES = {
   customers: 'customers',
@@ -13,6 +25,7 @@ export const STORES = {
   photos: 'photos',
   settings: 'settings',
   templates: 'templates',
+  outbox: 'outbox',
 } as const;
 
 type StoreName = (typeof STORES)[keyof typeof STORES];
@@ -41,6 +54,9 @@ function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORES.templates)) {
         db.createObjectStore(STORES.templates, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(STORES.outbox)) {
+        db.createObjectStore(STORES.outbox, { keyPath: 'id' });
       }
       if (event.oldVersion > 0 && event.oldVersion < 3 && request.transaction) {
         migrateJobsToCustomers(db, request.transaction);
@@ -133,6 +149,7 @@ export const inspectionsRepo = {
 };
 
 export const photosRepo = {
+  all: () => tx<PhotoRecord[]>(STORES.photos, 'readonly', (s) => s.getAll()),
   get: (id: string) => tx<PhotoRecord | undefined>(STORES.photos, 'readonly', (s) => s.get(id)),
   byInspection: (inspectionId: string) =>
     getAllByIndex<PhotoRecord>(STORES.photos, 'inspectionId', inspectionId),
@@ -146,8 +163,16 @@ export const templatesRepo = {
   remove: (id: string) => tx(STORES.templates, 'readwrite', (s) => s.delete(id)),
 };
 
+export const outboxRepo = {
+  all: () => tx<OutboxEntry[]>(STORES.outbox, 'readonly', (s) => s.getAll()),
+  put: (entry: OutboxEntry) => tx(STORES.outbox, 'readwrite', (s) => s.put(entry)),
+  remove: (id: string) => tx(STORES.outbox, 'readwrite', (s) => s.delete(id)),
+  clear: () => tx(STORES.outbox, 'readwrite', (s) => s.clear()),
+};
+
 const SETTINGS_KEY = 'app';
 const SHARED_KEY = 'shared';
+const SYNC_KEY = 'sync';
 
 const DEFAULT_SETTINGS: Settings = { inspectorName: '', companyName: '', role: 'inspector' };
 
@@ -176,6 +201,30 @@ export const sharedRepo = {
   },
   put: (value: SharedConfig) =>
     tx(STORES.settings, 'readwrite', (s) => s.put({ key: SHARED_KEY, value })),
+};
+
+const DEFAULT_SYNC_STATE: SyncState = {
+  pulledThrough: {},
+  lastSyncedAt: null,
+  seededRemote: false,
+};
+
+/**
+ * The pull watermark. Kept per device rather than per account: two phones signed
+ * in as the same person still have to catch up independently.
+ */
+export const syncRepo = {
+  async get(): Promise<SyncState> {
+    const row = await tx<{ key: string; value: SyncState } | undefined>(
+      STORES.settings,
+      'readonly',
+      (s) => s.get(SYNC_KEY),
+    );
+    return { ...DEFAULT_SYNC_STATE, ...row?.value };
+  },
+  put: (value: SyncState) =>
+    tx(STORES.settings, 'readwrite', (s) => s.put({ key: SYNC_KEY, value })),
+  reset: () => tx(STORES.settings, 'readwrite', (s) => s.delete(SYNC_KEY)),
 };
 
 /** Remove an inspection together with every photo attached to it. */

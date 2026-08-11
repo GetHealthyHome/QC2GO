@@ -11,7 +11,8 @@
     "smoke": "node scripts/smoke.mjs",
     "check:vercel": "node scripts/check-vercel-config.mjs",
     "checklists:export": "node scripts/export-checklists.mjs",
-    "check:auth-gate": "node scripts/check-auth-gate.mjs"
+    "check:auth-gate": "node scripts/check-auth-gate.mjs",
+    "check:sync-mappers": "node scripts/check-sync-mappers.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

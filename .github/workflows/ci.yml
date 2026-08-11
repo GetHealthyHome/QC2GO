@@ -31,6 +31,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # A column renamed in a migration but not in the mappers is not a type
+      # error — the field just arrives back empty. Only a round trip catches it.
+      - name: Check the sync mappers round-trip
+        run: npm run check:sync-mappers
+
       - name: Build
         run: npm run build
 

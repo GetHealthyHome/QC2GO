@@ -39,6 +39,11 @@ editable store on first run; admins can change them or add their own.
 | Mitsubishi Ductless Hyper-Heat | Indoor heads, penetrations & condensate, line sets, multi-zone branch box, outdoor unit, startup |
 | Quilt Ductless | Design verification, Covers, line sets & condensate, outdoor unit, Dial controllers, app commissioning |
 
+A generated inventory of every shipped checklist — all sections, checkpoints,
+flags, and guidance — lives in [`docs/CHECKLISTS.md`](docs/CHECKLISTS.md), with
+[`docs/checklists.csv`](docs/checklists.csv) for spreadsheet review. Refresh both
+with `npm run checklists:export` after changing anything under `src/templates/`.
+
 ### Question types
 
 - **Yes / No / N/A** — the standard checkpoint.

@@ -136,11 +136,26 @@ npm run build      # tsc + vite build into dist/
 npm run preview    # serve the build on :4173
 ```
 
+### CI
+
+`.github/workflows/ci.yml` runs on every pull request and on pushes to `main`:
+
+1. **Typecheck & build** — `npm run typecheck` then `npm run build`.
+2. **Smoke test** — serves the build and drives it in headless Chromium.
+
+Screenshots from the smoke run are uploaded as an artifact on every run, pass or
+fail, so a red build can be inspected without reproducing it locally.
+
 ### Smoke test
 
 `scripts/smoke.mjs` drives the whole flow in a real browser (Playwright): creates a
-job, runs an inspection, documents a deficiency with a photo, signs off, and asserts
-the record survives a hard reload.
+job, runs an inspection, documents a deficiency with a photo, signs off, asserts the
+record survives a hard reload, then switches to admin, edits the shared section,
+builds a checklist from scratch, reorders checkpoints, and verifies that the edit
+leaves the signed report untouched while a new inspection picks it up.
+
+Every assertion is a real check — the script prints `ok`/`FAIL` per item and exits
+non-zero if any fail or if the page logged a console error.
 
 ```bash
 npm run build

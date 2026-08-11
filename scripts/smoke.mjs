@@ -22,6 +22,21 @@ const errors = [];
 page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
 page.on('pageerror', (e) => errors.push('PAGEERROR: ' + e.message));
 
+/**
+ * Assertions have to be able to fail the process — a smoke test that only logs is
+ * decoration, not a gate. Failures are collected so one bad check does not hide
+ * the rest, then the run exits non-zero at the end.
+ */
+const failures = [];
+function check(label, condition, detail) {
+  if (condition) {
+    console.log(`  ok   ${label}`);
+  } else {
+    failures.push(label);
+    console.log(`  FAIL ${label}${detail === undefined ? '' : ` (got: ${detail})`}`);
+  }
+}
+
 const shot = async (name, full = false) => {
   await page.waitForTimeout(250);
   await page.screenshot({ path: `${OUT}/${name}.png`, fullPage: full });
@@ -68,7 +83,7 @@ await shot('06-job-info-filled');
 // --- walk every section ---
 const chips = page.locator('[data-active]');
 const chipCount = await chips.count();
-console.log('steps:', chipCount);
+check('checklist has job info step plus sections', chipCount > 1, chipCount);
 
 for (let s = 1; s < chipCount; s++) {
   await chips.nth(s).click();
@@ -146,13 +161,15 @@ await page.goto(inspectionUrl, { waitUntil: 'networkidle' });
 await page.reload({ waitUntil: 'networkidle' });
 await page.waitForTimeout(900);
 const text = await page.locator('body').innerText();
-console.log('--- after hard reload ---');
-console.log('url:', page.url());
-console.log('has job name :', text.includes('Marsh Rd'));
-console.log('is completed :', text.includes('Completed'));
-console.log('has note     :', text.includes('Concord building department'));
-console.log('has photo    :', await page.locator('img[src^="blob:"]').count(), 'blob images');
-console.log('has signature:', await page.locator('img[src^="data:image/png"]').count(), 'signatures');
+console.log('--- persistence after hard reload ---');
+const photoCount = await page.locator('img[src^="blob:"]').count();
+const sigCount = await page.locator('img[src^="data:image/png"]').count();
+check('report route survives reload', /\/report$/.test(page.url()), page.url());
+check('job name persisted', text.includes('Marsh Rd'));
+check('completed status persisted', text.includes('Completed'));
+check('deficiency note persisted', text.includes('Concord building department'));
+check('deficiency photo persisted', photoCount >= 1, photoCount);
+check('both signatures persisted', sigCount === 2, sigCount);
 await shot('15-report-after-reload', true);
 
 // --- admin checklist editor ---
@@ -204,7 +221,11 @@ await page.getByPlaceholder('What is the inspector checking?').last()
 await page.getByRole('button', { name: 'Move checkpoint up' }).last().click();
 await page.waitForTimeout(200);
 const orderAfterMove = await page.getByPlaceholder('What is the inspector checking?').first().inputValue();
-console.log('reorder put on top:', orderAfterMove);
+check(
+  'moving a checkpoint up reorders it',
+  orderAfterMove === 'Walkboards installed where required',
+  orderAfterMove,
+);
 await page.getByRole('button', { name: 'Save changes' }).click();
 await page.waitForTimeout(600);
 await shot('21-reordered');
@@ -212,13 +233,19 @@ await shot('21-reordered');
 // the new checklist shows up for inspectors
 await page.goto(BASE + '/#/checklists', { waitUntil: 'networkidle' });
 await page.waitForTimeout(400);
-console.log('new checklist listed:', await page.getByText('Attic Prep Pre-Install').count() > 0);
+check(
+  'admin-created checklist is listed',
+  (await page.getByText('Attic Prep Pre-Install').count()) > 0,
+);
 
 // --- the signed report must NOT have picked up the new universal question ---
 await page.goto(inspectionUrl + '/report', { waitUntil: 'networkidle' });
 await page.waitForTimeout(700);
 const reportText = await page.locator('body').innerText();
-console.log('signed report unchanged by edit:', !reportText.includes('Smart thermostat paired'));
+check(
+  'signed report is NOT rewritten by a template edit',
+  !reportText.includes('Smart thermostat paired'),
+);
 await shot('22-report-after-template-edit');
 
 // but a NEW inspection on the same job does pick it up
@@ -232,8 +259,17 @@ await page.waitForURL(/\/inspections\//);
 await page.locator('[data-active]').nth(1).click();
 await page.waitForTimeout(500);
 const freshText = await page.locator('body').innerText();
-console.log('new inspection has the edit:', freshText.includes('Smart thermostat paired'));
+check('a new inspection DOES pick up the template edit', freshText.includes('Smart thermostat paired'));
 await shot('23-new-inspection-has-edit');
 
-console.log('\nCONSOLE ERRORS:', errors.length ? errors : 'none');
+check('no console errors', errors.length === 0, errors.join(' | '));
+
 await browser.close();
+
+console.log('');
+if (failures.length) {
+  console.error(`SMOKE FAILED — ${failures.length} check(s):`);
+  for (const failure of failures) console.error(`  - ${failure}`);
+  process.exit(1);
+}
+console.log('SMOKE PASSED');

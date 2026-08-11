@@ -11,10 +11,10 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg', 'icon-192.png', 'icon-512.png'],
       manifest: {
-        name: 'QC2GO — Quality Control Inspections',
+        name: 'QC2GO — Quality in motion',
         short_name: 'QC2GO',
         description:
-          'Mobile quality control checklists for home performance, indoor air quality, and heat pump installations.',
+          'Quality in motion. Mobile quality control checklists for home performance, indoor air quality, and heat pump installations.',
         theme_color: '#0f172a',
         background_color: '#f8fafc',
         display: 'standalone',

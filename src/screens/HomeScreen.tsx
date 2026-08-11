@@ -120,7 +120,7 @@ export function HomeScreen() {
     <>
       <TopBar
         title="QC2GO"
-        subtitle="Quality control inspections"
+        subtitle="Quality in motion"
         actions={
           <Link
             to="/settings"

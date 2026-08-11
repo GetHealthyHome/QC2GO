@@ -79,6 +79,24 @@ jobs:
           curl -sf http://localhost:4173/ >/dev/null || { echo "preview server never came up"; exit 1; }
           npm run smoke
 
+      # The sign-in gate is the only thing protecting a configured deployment, and
+      # nothing else would catch it silently breaking. Dummy credentials are enough:
+      # the assertion is that the app is unreachable, not that sign-in succeeds.
+      - name: Verify the auth gate blocks a configured build
+        env:
+          VITE_SUPABASE_URL: https://example-project.supabase.co
+          VITE_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_dummy_key
+        run: |
+          npx vite build
+          npx vite preview --port 4174 --strictPort &
+          server=$!
+          trap 'kill $server 2>/dev/null || true' EXIT
+          for _ in $(seq 1 60); do
+            curl -sf http://localhost:4174/ >/dev/null && break
+            sleep 1
+          done
+          SMOKE_OUT=smoke-shots npm run check:auth-gate
+
       # Screenshots are the fastest way to see what a failing run actually looked like.
       - name: Upload screenshots
         if: always()

@@ -10,9 +10,11 @@
     "typecheck": "tsc -b --noEmit",
     "smoke": "node scripts/smoke.mjs",
     "check:vercel": "node scripts/check-vercel-config.mjs",
-    "checklists:export": "node scripts/export-checklists.mjs"
+    "checklists:export": "node scripts/export-checklists.mjs",
+    "check:auth-gate": "node scripts/check-auth-gate.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.112.3",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-router-dom": "^7.18.2"

@@ -6,3 +6,8 @@ dev-dist
 .vite
 smoke-shots
 *.tsbuildinfo
+
+# Local env — never commit real keys
+.env
+.env.*
+!.env.example

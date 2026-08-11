@@ -128,6 +128,35 @@ every section with pass/fail marks, deficiency explanations with photos, measure
 values, and both signatures. Print styles are set up so **Print → Save as PDF**
 produces the customer-facing document. Raw data exports as JSON.
 
+## Accounts and sign-in
+
+The app requires a sign-in **when a backend is configured**, and runs local-only
+without one. Two variables decide which:
+
+```
+VITE_SUPABASE_URL=https://<ref>.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+```
+
+Set both (in Vercel → Settings → Environment Variables, and in a local `.env` for
+development) and the app gates every route behind a sign-in, reading the person's
+role from `profiles.role`. Leave them unset — as the dev server and CI do — and the
+app stays local-only with no account required.
+
+That fallback is convenient and dangerous in equal measure: a production deploy
+missing these variables would silently have no authentication. Two things guard
+against it. The app shows a **Local mode** banner whenever it runs unconfigured, and
+CI builds a configured copy on every PR and asserts that nothing is reachable
+without signing in (`npm run check:auth-gate`).
+
+Only the **publishable** key belongs in these variables. It ships inside the client
+bundle by design and is protected by row-level security. The `service_role` key
+bypasses RLS entirely and must never reach a browser.
+
+Accounts are created by an administrator in the Supabase dashboard; there is no
+self-signup. Everyone starts as an `inspector` — see
+[`supabase/README.md`](supabase/README.md) for promoting someone to `admin`.
+
 ## Backend
 
 The app is local-first and works standalone today. `supabase/migrations/0001_init.sql`

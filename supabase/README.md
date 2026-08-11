@@ -67,10 +67,29 @@ Inspectors read all reports on purpose — recalling someone else's past
 walkthrough on a return visit is a real need. Tighten `inspections_select` if you
 want that scoped.
 
+## Connecting the app
+
+Set both variables wherever the app is built — Vercel → Settings → Environment
+Variables, plus a local `.env` for development:
+
+```
+VITE_SUPABASE_URL=https://<ref>.supabase.co
+VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
+```
+
+Both come from **Project Settings → API**. Use the publishable key only.
+
+With them set, every route sits behind a sign-in and the role comes from
+`profiles.role`. Without them the app runs local-only and shows a Local mode
+banner.
+
 ## Still to build
 
-Wiring the app to this schema means: a sign-in screen, replacing the local role
-toggle with `profiles.role`, and a sync layer that pushes the IndexedDB queue
-when a signal returns. Keeping IndexedDB as the write path is what preserves
-working offline in a crawlspace — Supabase becomes the thing it syncs to, not the
-thing it depends on.
+**Sync.** Inspections are still written to IndexedDB and stay on the device that
+recorded them — signing in does not yet upload anything. Keeping IndexedDB as the
+write path is what preserves working offline in a crawlspace, so the remaining
+work is a queue that pushes to these tables when a signal returns, not a rewrite
+to fetch-on-demand.
+
+Until that lands, treat the database as provisioned but empty: auth is real,
+storage is not yet.

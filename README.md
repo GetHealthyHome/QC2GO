@@ -115,6 +115,36 @@ evidence, a browser app cannot write to it without a server in front, and a
 60-checkpoint inspection does not flatten into a row. A one-way mirror from
 Supabase into a Sheet remains a good way to give the office a spreadsheet view.
 
+## Deploying
+
+`vercel.json` pins the Vite preset, the build command, and the output directory, so
+importing the repo at [vercel.com/new](https://vercel.com/new) needs no configuration —
+pick `GetHealthyHome/QC2GO`, deploy, and every push to `main` ships automatically.
+
+It also sets the headers this app specifically needs:
+
+- **Hashed assets** (`/assets/*`) cached immutably — the filename changes when the
+  contents do, so there is nothing to revalidate.
+- **`sw.js`, the workbox runtime, and the manifest** revalidated on every request.
+  This one is not boilerplate: the service worker is how a phone learns a new
+  version exists, so a CDN-cached copy leaves an inspector on a stale build with no
+  indication anything is wrong.
+- **`nosniff`, `DENY` framing, `strict-origin-when-cross-origin`**, and a
+  `Permissions-Policy` allowing the camera (the deficiency photo flow needs it)
+  while denying geolocation and microphone.
+
+No SPA rewrite is needed — the app uses `HashRouter`, so every route is served
+from `/`.
+
+`npm run check:vercel` validates the config, and CI runs it before typecheck. An
+invalid `vercel.json` does not fail the build or the tests; it fails at deploy
+time, after everything else has gone green.
+
+An HTTPS origin is required for the parts that matter in the field. Service workers
+only register on `https://` or `localhost`, so a LAN address like
+`http://192.168.1.x:5173` gives no home-screen install and no offline mode. Use it
+to click through screens, not to test offline behaviour.
+
 ## Offline and storage
 
 Everything is stored on the device in IndexedDB — jobs, answers, photos, and

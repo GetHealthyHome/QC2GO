@@ -10,13 +10,12 @@ from `src/templates/` — run `npm run checklists:export` to refresh.
 
 ## Every checklist opens with these two blocks
 
-Prepended automatically to all 5 checklists, so a company-wide change is made once.
+Prepended automatically to all 6 checklists, so a company-wide change is made once.
 
 ### 1. Job Information
 
 | Field | Type | Required | Prefilled from job |
 | --- | --- | :---: | --- |
-| Project name | text | Yes | name |
 | Customer name | text | Yes | customerName |
 | Job address | text | Yes | address |
 | Salesperson | text | Yes | salesperson |
@@ -73,13 +72,89 @@ Prepended automatically to all 5 checklists, so a company-wide change is made on
 
 | # | Checklist | Category | Sections | Yes/No checkpoints | Measurements | Total items |
 | :-: | --- | --- | :-: | :-: | :-: | :-: |
-| 1 | Home Performance — Insulation & Air Sealing | Home Performance | 6 | 45 | 4 | 49 |
-| 2 | Indoor Air Quality — Ventilation, Filtration & Humidity | Indoor Air Quality | 6 | 44 | 4 | 48 |
-| 3 | Mitsubishi Ducted Hyper-Heat Heat Pump | Mitsubishi Ducted | 6 | 60 | 4 | 64 |
-| 4 | Mitsubishi Ductless Hyper-Heat Heat Pump | Mitsubishi Ductless | 7 | 59 | 2 | 61 |
-| 5 | Quilt Ductless Heat Pump | Quilt | 7 | 64 | 2 | 66 |
+| 1 | Quick Safety Audit | Safety | 5 | 42 | 1 | 43 |
+| 2 | Home Performance — Insulation & Air Sealing | Home Performance | 6 | 45 | 4 | 49 |
+| 3 | Indoor Air Quality — Ventilation, Filtration & Humidity | Indoor Air Quality | 6 | 44 | 4 | 48 |
+| 4 | Mitsubishi Ducted Hyper-Heat Heat Pump | Mitsubishi Ducted | 6 | 60 | 4 | 64 |
+| 5 | Mitsubishi Ductless Hyper-Heat Heat Pump | Mitsubishi Ductless | 7 | 59 | 2 | 61 |
+| 6 | Quilt Ductless Heat Pump | Quilt | 7 | 64 | 2 | 66 |
 
 *Counts include the shared Universal QC Standards section, which runs first on every checklist.*
+
+---
+
+## Quick Safety Audit
+
+**Category:** Safety  
+**Use for:** Fast on-site safety sweep. Run on arrival or any time conditions change.  
+**Size:** 4 system sections (43 items including the universal block)
+
+> Runs after **Universal QC Standards**.
+
+### Occupant & Building Safety
+
+*Hazards to the people living here.*
+
+1. **Working CO alarms present on every level with fuel-burning appliances**  
+    `Critical`  
+    *Press to test. A missing or dead CO alarm is a same-day fix, not a punch item.*
+2. **Working smoke alarms present and not past their replacement date**  
+    `Critical`
+3. **No gas odor anywhere in the building**  
+    `Critical`  
+    *If yes to an odor: stop, evacuate, call the utility. Do not continue the audit.*
+4. **Ambient CO reading in the main living space**  
+    `Measurement — ppm`
+5. **No visible spillage, scorching, or backdraft at any combustion appliance**  
+    `Critical` · `Photo for record`  
+    *Look for soot, melted plastic, or rust streaks at the draft hood.*
+6. **Flues and vent connectors intact, sloped correctly, and properly supported**  
+    `Critical`
+7. **No solvents, gasoline, or paint stored near combustion appliances**
+8. **Exits, stairs, and walkways clear of tools, materials, and cords**  
+    `Critical`
+
+### Electrical
+
+1. **Panel cover in place, no exposed conductors or open knockouts**  
+    `Critical`
+2. **No damaged, spliced, or unsupported wiring in the work area**  
+    `Critical`
+3. **Knob-and-tube or other legacy wiring identified and flagged if present**  
+    *Answer No if it is present and not yet documented for the office.*
+4. **GFCI protection present where required and tested**
+5. **Extension cords and power tools in good condition, correctly rated**
+
+### Hazardous Materials & Air Quality
+
+*Suspect it, stop and report it — do not disturb.*
+
+1. **No suspected asbestos disturbed or at risk of disturbance**  
+    `Critical` · `Photo for record`  
+    *Pipe wrap, duct tape mastic, floor tile, popcorn ceilings in pre-1985 homes.*
+2. **No vermiculite insulation present in the work area**  
+    `Critical`  
+    *Loose, pebbly, gold-brown. Assume it contains asbestos until tested.*
+3. **Lead-safe practices in place where pre-1978 painted surfaces are disturbed**  
+    `Critical`
+4. **No active mold growth or water intrusion in the work area**  
+    `Photo for record`
+5. **No rodent or pest contamination requiring remediation before work**
+
+### Crew & Work Area
+
+1. **Crew wearing the PPE the task requires**  
+    `Critical`  
+    *Respirators for insulation and demo, eye protection, gloves, hearing protection.*
+2. **Ladders correctly set, footed, and tied off where required**  
+    `Critical`
+3. **Fall protection in place for attic walkways, roof work, and open framing**  
+    `Critical`
+4. **Attic and crawlspace access safe — adequate lighting, no unsupported ceiling**
+5. **No structural concerns noted in attic, crawlspace, or basement**  
+    `Photo for record`
+6. **Vehicles and trailers parked without blocking access or creating a hazard**
+7. **Occupants, children, and pets kept clear of the work area**
 
 ---
 

@@ -1,11 +1,10 @@
 import type { FieldDef, Section } from '../lib/types';
 
 /**
- * The header block every checklist opens with. Values prefill from the job record
- * so the inspector confirms rather than retypes.
+ * The header block every checklist opens with. Values prefill from the customer
+ * record so the inspector confirms rather than retypes.
  */
 export const JOB_INFO_FIELDS: FieldDef[] = [
-  { id: 'projectName', label: 'Project name', type: 'text', required: true, fromJob: 'name' },
   {
     id: 'customerName',
     label: 'Customer name',

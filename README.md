@@ -10,8 +10,27 @@ off until it has both a written explanation and a photo.
 
 ## How it works
 
-**Jobs are the top level.** Everything is organized by job name. A job holds the
-customer, address, salesperson, team leader, and every inspection run against it.
+**Customers are the top level.** Everything is organized by customer: the address,
+work scope, salesperson, team leader, and every checklist ever run there. The home
+screen is a customer search; salesperson and team leader are dropdowns an admin
+maintains under Settings → People, so field staff pick a name instead of typing one.
+
+**Jobs run across days.** A checklist is stamped with the visit day it covers, so a
+job with attic work on Tuesday and commissioning on Thursday keeps them separate.
+Which checklists apply is chosen once per customer with tick boxes; from then on any
+of them can be run on any day.
+
+**A completed checklist becomes a QC Card** — the date, the score, and the pass/fail
+split — filed under that customer and grouped by day. Score is the percentage of
+judged items that passed; N/A items are excluded so skipping half a checklist cannot
+inflate it, and any critical failure forces the card red however high the percentage.
+
+**Near me** finds customers close to where you are standing. Locations come from the
+device GPS, captured on the customer record while on site — addresses are not
+geocoded, because that would mean a network call in exactly the places with no signal.
+
+**Quick Safety Audit** launches straight from the home screen, against an existing
+customer or a brand new address, for the sweep that happens on arrival.
 
 **Every checklist shares a common opening.** Two blocks are prepended to all five
 checklists:

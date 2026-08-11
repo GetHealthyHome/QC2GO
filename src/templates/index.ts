@@ -5,6 +5,7 @@ import { indoorAirQuality } from './indoorAirQuality';
 import { mitsubishiDucted } from './mitsubishiDucted';
 import { mitsubishiDuctless } from './mitsubishiDuctless';
 import { quilt } from './quilt';
+import { quickSafetyAudit } from './quickSafetyAudit';
 
 export { JOB_INFO_FIELDS, UNIVERSAL_SECTION } from './shared';
 
@@ -14,6 +15,7 @@ export { JOB_INFO_FIELDS, UNIVERSAL_SECTION } from './shared';
  * Resetting a checklist restores it from here.
  */
 export const BUILT_IN_TEMPLATES: Template[] = [
+  quickSafetyAudit,
   homePerformance,
   indoorAirQuality,
   mitsubishiDucted,
@@ -25,6 +27,8 @@ export function defaultSharedConfig(): SharedConfig {
   return {
     infoFields: JOB_INFO_FIELDS,
     universalSection: UNIVERSAL_SECTION,
+    salespeople: [],
+    teamLeaders: [],
     updatedAt: new Date().toISOString(),
   };
 }
@@ -35,7 +39,14 @@ export const CATEGORY_LABELS: Record<string, string> = {
   'mitsubishi-ducted': 'Mitsubishi Ducted',
   'mitsubishi-ductless': 'Mitsubishi Ductless',
   quilt: 'Quilt',
+  safety: 'Safety',
 };
+
+/**
+ * The Quick Safety Audit is launched straight from the home screen rather than
+ * being attached to a job in advance.
+ */
+export const QUICK_AUDIT_TEMPLATE_ID = 'quick-safety-audit';
 
 /** Falls back to the raw value so admin-created categories still render. */
 export function categoryLabel(category: string): string {

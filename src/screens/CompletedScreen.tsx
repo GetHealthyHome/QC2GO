@@ -8,31 +8,30 @@ import { AlertIcon, ChevronRightIcon, ClipboardIcon, SearchIcon } from '../compo
 
 /** History across every job — what an inspector needs to recall a past walkthrough. */
 export function CompletedScreen() {
-  const { inspections, jobs, templates, shared } = useStore();
+  const { inspections, customers, templates, shared } = useStore();
   const [query, setQuery] = useState('');
 
   const rows = useMemo(() => {
     return inspections
       .filter((inspection) => inspection.status === 'completed')
       .map((inspection) => {
-        const job = jobs.find((candidate) => candidate.id === inspection.jobId);
+        const customer = customers.find((c) => c.id === inspection.customerId);
         const checklist = resolveChecklist(inspection, templates, shared);
         const progress = overallProgress(inspection, checklist?.sections ?? []);
-        return { inspection, job, checklist, progress };
+        return { inspection, customer, checklist, progress };
       })
       .sort((a, b) =>
         (b.inspection.completedAt ?? '').localeCompare(a.inspection.completedAt ?? ''),
       );
-  }, [inspections, jobs, templates, shared]);
+  }, [inspections, customers, templates, shared]);
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
     if (!needle) return rows;
     return rows.filter((row) =>
       [
-        row.job?.name,
-        row.job?.customerName,
-        row.job?.address,
+        row.customer?.customerName,
+        row.customer?.address,
         row.checklist?.templateName,
         row.inspection.info.inspector,
       ]
@@ -52,7 +51,7 @@ export function CompletedScreen() {
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search job, customer, checklist, inspector…"
+              placeholder="Search customer, checklist, inspector…"
               className={cx(inputClass, 'pl-11')}
             />
           </div>
@@ -70,7 +69,7 @@ export function CompletedScreen() {
           />
         ) : (
           <ul className="flex flex-col gap-2.5">
-            {visible.map(({ inspection, job, checklist, progress }) => (
+            {visible.map(({ inspection, customer, checklist, progress }) => (
               <Card as="li" key={inspection.id} className="active:bg-ink-50">
                 <Link
                   to={`/inspections/${inspection.id}/report`}
@@ -87,7 +86,7 @@ export function CompletedScreen() {
                       ) : null}
                     </div>
                     <p className="mt-1 text-[15px] leading-tight font-bold text-ink-900">
-                      {job?.name ?? 'Deleted job'}
+                      {customer?.customerName ?? 'Deleted customer'}
                     </p>
                     <p className="text-[13px] text-ink-600">
                       {checklist?.templateName ?? 'Unknown checklist'}

@@ -9,10 +9,10 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  customersRepo,
+  deleteCustomerCascade,
   deleteInspectionCascade,
-  deleteJobCascade,
   inspectionsRepo,
-  jobsRepo,
   photosRepo,
   settingsRepo,
   sharedRepo,
@@ -20,8 +20,8 @@ import {
 } from './db';
 import { compressImage } from './image';
 import type {
+  Customer,
   Inspection,
-  Job,
   PhotoRecord,
   Settings,
   SharedConfig,
@@ -42,16 +42,23 @@ function newId(prefix: string): string {
 
 interface StoreValue {
   ready: boolean;
-  jobs: Job[];
+  customers: Customer[];
   inspections: Inspection[];
   templates: Template[];
   shared: SharedConfig;
   settings: Settings;
   isAdmin: boolean;
-  createJob: (input: Omit<Job, 'id' | 'createdAt' | 'updatedAt'>) => Promise<Job>;
-  updateJob: (id: string, patch: Partial<Job>) => Promise<void>;
-  removeJob: (id: string) => Promise<void>;
-  createInspection: (jobId: string, templateId: string, visitType: VisitType) => Promise<Inspection>;
+  createCustomer: (
+    input: Omit<Customer, 'id' | 'createdAt' | 'updatedAt'>,
+  ) => Promise<Customer>;
+  updateCustomer: (id: string, patch: Partial<Customer>) => Promise<void>;
+  removeCustomer: (id: string) => Promise<void>;
+  createInspection: (
+    customerId: string,
+    templateId: string,
+    visitType: VisitType,
+    visitDate?: string,
+  ) => Promise<Inspection>;
   updateInspection: (id: string, patch: Partial<Inspection>) => void;
   removeInspection: (id: string) => Promise<void>;
   addPhoto: (inspectionId: string, questionId: string, file: File) => Promise<string>;
@@ -73,7 +80,7 @@ const WRITE_DEBOUNCE_MS = 400;
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
-  const [jobs, setJobs] = useState<Job[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
   const [inspections, setInspections] = useState<Inspection[]>([]);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [shared, setShared] = useState<SharedConfig>(() => defaultSharedConfig());
@@ -89,13 +96,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      jobsRepo.all(),
+      customersRepo.all(),
       inspectionsRepo.all(),
       settingsRepo.get(),
       templatesRepo.all(),
       sharedRepo.get(),
     ])
-      .then(async ([loadedJobs, loadedInspections, loadedSettings, loadedTemplates, loadedShared]) => {
+      .then(async ([loadedCustomers, loadedInspections, loadedSettings, loadedTemplates, loadedShared]) => {
         // First run: seed the editable stores from the shipped checklists.
         let seededTemplates = loadedTemplates;
         if (seededTemplates.length === 0) {
@@ -113,7 +120,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           await sharedRepo.put(seededShared);
         }
         if (cancelled) return;
-        setJobs(loadedJobs);
+        setCustomers(loadedCustomers);
         setInspections(loadedInspections);
         setSettings(loadedSettings);
         setTemplates(seededTemplates);
@@ -159,58 +166,61 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     pendingWrites.current.set(record.id, { timer, record });
   }, []);
 
-  const createJob = useCallback<StoreValue['createJob']>(async (input) => {
+  const createCustomer = useCallback<StoreValue['createCustomer']>(async (input) => {
     const now = new Date().toISOString();
-    const job: Job = { ...input, id: newId('job'), createdAt: now, updatedAt: now };
-    await jobsRepo.put(job);
-    setJobs((current) => [...current, job]);
-    return job;
+    const customer: Customer = { ...input, id: newId('cust'), createdAt: now, updatedAt: now };
+    await customersRepo.put(customer);
+    setCustomers((current) => [...current, customer]);
+    return customer;
   }, []);
 
-  const updateJob = useCallback<StoreValue['updateJob']>(async (id, patch) => {
-    let next: Job | undefined;
-    setJobs((current) =>
-      current.map((job) => {
-        if (job.id !== id) return job;
-        next = { ...job, ...patch, updatedAt: new Date().toISOString() };
-        return next;
-      }),
+  const updateCustomer = useCallback<StoreValue['updateCustomer']>(async (id, patch) => {
+    setCustomers((current) =>
+      current.map((customer) =>
+        customer.id === id
+          ? { ...customer, ...patch, updatedAt: new Date().toISOString() }
+          : customer,
+      ),
     );
-    const stored = await jobsRepo.get(id);
-    if (stored) await jobsRepo.put({ ...stored, ...patch, updatedAt: new Date().toISOString() });
+    const stored = await customersRepo.get(id);
+    if (stored) {
+      await customersRepo.put({ ...stored, ...patch, updatedAt: new Date().toISOString() });
+    }
   }, []);
 
-  const removeJob = useCallback<StoreValue['removeJob']>(async (id) => {
-    await deleteJobCascade(id);
-    setJobs((current) => current.filter((job) => job.id !== id));
-    setInspections((current) => current.filter((inspection) => inspection.jobId !== id));
+  const removeCustomer = useCallback<StoreValue['removeCustomer']>(async (id) => {
+    await deleteCustomerCascade(id);
+    setCustomers((current) => current.filter((customer) => customer.id !== id));
+    setInspections((current) => current.filter((inspection) => inspection.customerId !== id));
   }, []);
 
   const createInspection = useCallback<StoreValue['createInspection']>(
-    async (jobId, templateId, visitType) => {
-      const job = jobs.find((candidate) => candidate.id === jobId);
+    async (customerId, templateId, visitType, visitDate) => {
+      const customer = customers.find((candidate) => candidate.id === customerId);
       const template = templates.find((candidate) => candidate.id === templateId);
       if (!template) throw new Error(`Unknown checklist: ${templateId}`);
       const info: Record<string, string> = {};
       for (const field of shared.infoFields) {
-        if (field.fromJob && job) {
-          const value = job[field.fromJob];
+        if (field.fromJob && customer) {
+          const value = customer[field.fromJob];
           if (typeof value === 'string') info[field.id] = value;
         }
       }
-      info.inspectionDate = todayIso();
+      const day = visitDate ?? todayIso();
+      info.inspectionDate = day;
       if (settings.inspectorName) info.inspector = settings.inspectorName;
       info.customerPresent = visitType === 'final-walkthrough' ? 'Yes' : 'No';
 
       const now = new Date().toISOString();
       const inspection: Inspection = {
         id: newId('insp'),
-        jobId,
+        customerId,
         templateId: template.id,
         // Freeze the checklist as it stands today; later admin edits must not
         // rewrite an inspection that is already under way or signed.
         snapshot: snapshotOf(template, shared),
         visitType,
+        visitDate: day,
         status: 'in-progress',
         info,
         responses: {},
@@ -221,7 +231,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setInspections((current) => [...current, inspection]);
       return inspection;
     },
-    [jobs, templates, shared, settings.inspectorName],
+    [customers, templates, shared, settings.inspectorName],
   );
 
   const updateInspection = useCallback<StoreValue['updateInspection']>(
@@ -391,15 +401,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const value = useMemo<StoreValue>(
     () => ({
       ready,
-      jobs,
+      customers,
       inspections,
       templates,
       shared,
       settings,
       isAdmin: settings.role === 'admin',
-      createJob,
-      updateJob,
-      removeJob,
+      createCustomer,
+      updateCustomer,
+      removeCustomer,
       createInspection,
       updateInspection,
       removeInspection,
@@ -417,14 +427,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }),
     [
       ready,
-      jobs,
+      customers,
       inspections,
       templates,
       shared,
       settings,
-      createJob,
-      updateJob,
-      removeJob,
+      createCustomer,
+      updateCustomer,
+      removeCustomer,
       createInspection,
       updateInspection,
       removeInspection,
@@ -451,9 +461,12 @@ export function useStore(): StoreValue {
   return value;
 }
 
-export function useJob(jobId: string | undefined): Job | undefined {
-  const { jobs } = useStore();
-  return useMemo(() => jobs.find((job) => job.id === jobId), [jobs, jobId]);
+export function useCustomer(customerId: string | undefined): Customer | undefined {
+  const { customers } = useStore();
+  return useMemo(
+    () => customers.find((customer) => customer.id === customerId),
+    [customers, customerId],
+  );
 }
 
 export function useInspection(inspectionId: string | undefined): Inspection | undefined {
@@ -481,13 +494,16 @@ export function useTemplate(templateId: string | undefined): Template | undefine
   );
 }
 
-export function useJobInspections(jobId: string | undefined): Inspection[] {
+export function useCustomerInspections(customerId: string | undefined): Inspection[] {
   const { inspections } = useStore();
   return useMemo(
     () =>
       inspections
-        .filter((inspection) => inspection.jobId === jobId)
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    [inspections, jobId],
+        .filter((inspection) => inspection.customerId === customerId)
+        .sort(
+          (a, b) =>
+            b.visitDate.localeCompare(a.visitDate) || b.createdAt.localeCompare(a.createdAt),
+        ),
+    [inspections, customerId],
   );
 }

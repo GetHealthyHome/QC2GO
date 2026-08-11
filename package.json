@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "typecheck": "tsc -b --noEmit",
     "smoke": "node scripts/smoke.mjs",
-    "check:vercel": "node scripts/check-vercel-config.mjs"
+    "check:vercel": "node scripts/check-vercel-config.mjs",
+    "checklists:export": "node scripts/export-checklists.mjs"
   },
   "dependencies": {
     "react": "^19.2.8",

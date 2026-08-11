@@ -18,6 +18,15 @@ import {
   sharedRepo,
   templatesRepo,
 } from './db';
+import {
+  configureSync,
+  enqueue,
+  fetchPhotoBlob,
+  startSyncTriggers,
+  useSyncStatus,
+  type SyncStatus,
+} from './sync';
+import { storagePathFor } from './syncMap';
 import { compressImage } from './image';
 import type {
   Customer,
@@ -39,6 +48,24 @@ function newId(prefix: string): string {
       ? crypto.randomUUID().slice(0, 8)
       : Math.random().toString(36).slice(2, 10);
   return `${prefix}_${Date.now().toString(36)}${random}`;
+}
+
+/**
+ * Deleting a row on the server cascades to the rows beneath it, but nothing
+ * cascades into the storage bucket. These queue the file removals while the
+ * records that know their bucket keys still exist.
+ */
+async function queuePhotoDeletes(photos: PhotoRecord[]): Promise<void> {
+  for (const photo of photos) {
+    await enqueue('photo', photo.id, 'delete', photo.storagePath ?? storagePathFor(photo));
+  }
+}
+
+async function queuePhotoDeletesForCustomer(customerId: string): Promise<void> {
+  const inspections = await inspectionsRepo.byCustomer(customerId);
+  for (const inspection of inspections) {
+    await queuePhotoDeletes(await photosRepo.byInspection(inspection.id));
+  }
 }
 
 interface StoreValue {
@@ -73,6 +100,8 @@ interface StoreValue {
   resetTemplate: (id: string) => Promise<void>;
   saveShared: (next: SharedConfig) => Promise<void>;
   resetShared: () => Promise<void>;
+  /** What the sync engine is doing, for the status line on Settings. */
+  sync: SyncStatus;
 }
 
 const StoreContext = createContext<StoreValue | null>(null);
@@ -82,6 +111,7 @@ const WRITE_DEBOUNCE_MS = 400;
 export function StoreProvider({ children }: { children: ReactNode }) {
   // AuthProvider wraps this, so the signed-in profile is available here.
   const auth = useAuth();
+  const sync = useSyncStatus();
   const [ready, setReady] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [inspections, setInspections] = useState<Inspection[]>([]);
@@ -139,10 +169,49 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Sync runs under the signed-in account, and stops entirely when there is not
+  // one. The role decides whether checklist edits are even offered to the
+  // server — row-level security would refuse them from an inspector anyway.
+  useEffect(() => {
+    void configureSync(
+      auth.session?.user && auth.profile
+        ? { userId: auth.session.user.id, isAdmin: auth.profile.role === 'admin' }
+        : null,
+    );
+  }, [auth.session?.user?.id, auth.profile?.role]);
+
+  useEffect(() => startSyncTriggers(), []);
+
+  /**
+   * A pull writes straight to IndexedDB, so React has to be told. Reading it
+   * back rather than threading changes through the engine keeps one source of
+   * truth: whatever is on disk is what the screens show.
+   */
+  useEffect(() => {
+    if (sync.revision === 0) return;
+    let cancelled = false;
+    void Promise.all([
+      customersRepo.all(),
+      inspectionsRepo.all(),
+      templatesRepo.all(),
+      sharedRepo.get(),
+    ]).then(([nextCustomers, nextInspections, nextTemplates, nextShared]) => {
+      if (cancelled) return;
+      setCustomers(nextCustomers);
+      setInspections(nextInspections);
+      setTemplates(nextTemplates);
+      if (nextShared) setShared(nextShared);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [sync.revision]);
+
   const flushPending = useCallback(() => {
     for (const [, entry] of pendingWrites.current) {
       clearTimeout(entry.timer);
       void inspectionsRepo.put(entry.record);
+      void enqueue('inspection', entry.record.id, 'upsert');
     }
     pendingWrites.current.clear();
   }, []);
@@ -165,6 +234,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const timer = window.setTimeout(() => {
       pendingWrites.current.delete(record.id);
       void inspectionsRepo.put(record);
+      // Queued from inside the debounce rather than on every keystroke, so a
+      // long answer is one upload instead of forty.
+      void enqueue('inspection', record.id, 'upsert');
     }, WRITE_DEBOUNCE_MS);
     pendingWrites.current.set(record.id, { timer, record });
   }, []);
@@ -174,6 +246,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const customer: Customer = { ...input, id: newId('cust'), createdAt: now, updatedAt: now };
     await customersRepo.put(customer);
     setCustomers((current) => [...current, customer]);
+    await enqueue('customer', customer.id, 'upsert');
     return customer;
   }, []);
 
@@ -188,11 +261,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const stored = await customersRepo.get(id);
     if (stored) {
       await customersRepo.put({ ...stored, ...patch, updatedAt: new Date().toISOString() });
+      await enqueue('customer', id, 'upsert');
     }
   }, []);
 
   const removeCustomer = useCallback<StoreValue['removeCustomer']>(async (id) => {
+    // The server cascades the rows, but not the photo files behind them, so the
+    // bucket keys are collected here while the records still know them.
+    await queuePhotoDeletesForCustomer(id);
     await deleteCustomerCascade(id);
+    await enqueue('customer', id, 'delete');
     setCustomers((current) => current.filter((customer) => customer.id !== id));
     setInspections((current) => current.filter((inspection) => inspection.customerId !== id));
   }, []);
@@ -232,6 +310,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       };
       await inspectionsRepo.put(inspection);
       setInspections((current) => [...current, inspection]);
+      await enqueue('inspection', inspection.id, 'upsert');
       return inspection;
     },
     [customers, templates, shared, settings.inspectorName],
@@ -252,7 +331,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   );
 
   const removeInspection = useCallback<StoreValue['removeInspection']>(async (id) => {
+    await queuePhotoDeletes(await photosRepo.byInspection(id));
     await deleteInspectionCascade(id);
+    await enqueue('inspection', id, 'delete');
     setInspections((current) => current.filter((inspection) => inspection.id !== id));
   }, []);
 
@@ -267,6 +348,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         createdAt: new Date().toISOString(),
       };
       await photosRepo.put(photo);
+      await enqueue('photo', photo.id, 'upsert');
       setInspections((current) =>
         current.map((inspection) => {
           if (inspection.id !== inspectionId) return inspection;
@@ -293,6 +375,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const photo = await photosRepo.get(id);
       await photosRepo.remove(id);
       if (!photo) return;
+      await enqueue('photo', id, 'delete', photo.storagePath ?? storagePathFor(photo));
       setInspections((current) =>
         current.map((inspection) => {
           if (inspection.id !== photo.inspectionId) return inspection;
@@ -317,7 +400,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [queueInspectionWrite],
   );
 
-  const getPhoto = useCallback<StoreValue['getPhoto']>((id) => photosRepo.get(id), []);
+  /**
+   * A photo pulled from another device arrives as a record with no bytes. This
+   * is the one place anything renders an image, so it is where the download
+   * happens — and it is cached locally afterwards, so it only happens once.
+   */
+  const getPhoto = useCallback<StoreValue['getPhoto']>(async (id) => {
+    const photo = await photosRepo.get(id);
+    if (!photo || photo.blob) return photo;
+    return fetchPhotoBlob(photo);
+  }, []);
 
   const saveSettings = useCallback<StoreValue['saveSettings']>(async (next) => {
     setSettings(next);
@@ -331,6 +423,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       updatedAt: new Date().toISOString(),
     };
     await templatesRepo.put(next);
+    await enqueue('template', next.id, 'upsert');
     setTemplates((current) => {
       const exists = current.some((candidate) => candidate.id === next.id);
       return exists
@@ -354,6 +447,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       ...input,
     };
     await templatesRepo.put(template);
+    await enqueue('template', template.id, 'upsert');
     setTemplates((current) => [...current, template]);
     return template;
   }, []);
@@ -374,6 +468,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const removeTemplate = useCallback<StoreValue['removeTemplate']>(async (id) => {
     await templatesRepo.remove(id);
+    await enqueue('template', id, 'delete');
     setTemplates((current) => current.filter((template) => template.id !== id));
   }, []);
 
@@ -384,6 +479,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     const now = new Date().toISOString();
     const restored: Template = { ...structuredClone(original), createdAt: now, updatedAt: now };
     await templatesRepo.put(restored);
+    await enqueue('template', id, 'upsert');
     setTemplates((current) =>
       current.map((template) => (template.id === id ? restored : template)),
     );
@@ -392,12 +488,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const saveShared = useCallback<StoreValue['saveShared']>(async (next) => {
     const stamped: SharedConfig = { ...next, updatedAt: new Date().toISOString() };
     await sharedRepo.put(stamped);
+    await enqueue('shared', 'shared', 'upsert');
     setShared(stamped);
   }, []);
 
   const resetShared = useCallback<StoreValue['resetShared']>(async () => {
     const restored = defaultSharedConfig();
     await sharedRepo.put(restored);
+    await enqueue('shared', 'shared', 'upsert');
     setShared(restored);
   }, []);
 
@@ -429,9 +527,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       resetTemplate,
       saveShared,
       resetShared,
+      sync,
     }),
     [
       ready,
+      sync,
       customers,
       inspections,
       templates,

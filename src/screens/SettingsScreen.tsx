@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { useAuth } from '../lib/auth';
+import { retryRejected, runSync, type SyncStatus } from '../lib/sync';
 import type { Role } from '../lib/types';
 import { Badge, Button, Card, Field, Screen, TextInput, TopBar, cx } from '../components/ui';
 import {
@@ -201,13 +202,123 @@ export function SettingsScreen() {
             </div>
           </div>
           <p className="mt-3 text-[13px] leading-relaxed text-ink-500">
-            Jobs, answers, photos, and signatures are stored on this device only. Nothing is
-            uploaded.
+            {auth.enabled
+              ? 'Everything saves to this device first and uploads in the background, so a walkthrough never waits on a signal.'
+              : 'Jobs, answers, photos, and signatures are stored on this device only. Nothing is uploaded.'}
           </p>
         </Card>
+
+        {auth.enabled ? <SyncCard /> : null}
       </Screen>
     </>
   );
+}
+
+/**
+ * The honest answer to "is my work safe?". Inspectors finish a job in a basement
+ * and drive away; this is where they can see whether it actually went up.
+ */
+function SyncCard() {
+  const { sync } = useStore();
+  const [retrying, setRetrying] = useState(false);
+
+  const summary = describeSync(sync);
+
+  async function retry() {
+    setRetrying(true);
+    try {
+      await retryRejected();
+    } finally {
+      setRetrying(false);
+    }
+  }
+
+  return (
+    <>
+      <h2 className="mt-8 mb-2.5 px-1 text-[13px] font-bold tracking-wide text-ink-500 uppercase">
+        Sync
+      </h2>
+      <Card className="p-4">
+        <div className="flex items-center gap-2.5">
+          <span
+            aria-hidden
+            className={cx(
+              'size-2.5 shrink-0 rounded-full',
+              summary.tone === 'ok' && 'bg-pass-500',
+              summary.tone === 'busy' && 'animate-pulse bg-brand-500',
+              summary.tone === 'warn' && 'bg-warn-500',
+              summary.tone === 'bad' && 'bg-fail-500',
+            )}
+          />
+          <p className="min-w-0 flex-1 text-[15px] font-semibold text-ink-900">{summary.label}</p>
+          <Button
+            variant="secondary"
+            className="shrink-0 px-3 py-1.5 text-[13px]"
+            onClick={() => void runSync()}
+            disabled={sync.phase === 'syncing'}
+          >
+            Sync now
+          </Button>
+        </div>
+
+        <p className="mt-2 text-[13px] leading-relaxed text-ink-500">{summary.detail}</p>
+
+        {sync.rejected > 0 ? (
+          <div className="mt-3 rounded-xl bg-fail-50 p-3">
+            <p className="text-[13px] font-semibold text-fail-700">
+              {sync.rejected} {sync.rejected === 1 ? 'change was' : 'changes were'} refused by the
+              server
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-fail-700/80">
+              Usually this means the record is no longer yours to edit — a signed inspection can
+              only be reopened by an admin. The change is still on this device.
+            </p>
+            <Button
+              variant="secondary"
+              block
+              className="mt-2.5"
+              onClick={() => void retry()}
+              disabled={retrying}
+            >
+              {retrying ? 'Trying again…' : 'Try again'}
+            </Button>
+          </div>
+        ) : null}
+      </Card>
+    </>
+  );
+}
+
+function describeSync(sync: SyncStatus): {
+  label: string;
+  detail: string;
+  tone: 'ok' | 'busy' | 'warn' | 'bad';
+} {
+  const last = sync.lastSyncedAt
+    ? `Last synced ${new Date(sync.lastSyncedAt).toLocaleString()}.`
+    : 'Not synced yet on this device.';
+
+  if (sync.phase === 'syncing') {
+    return { label: 'Syncing…', detail: last, tone: 'busy' };
+  }
+  if (sync.phase === 'offline') {
+    return {
+      label: 'Offline',
+      detail: `${sync.pending} ${sync.pending === 1 ? 'change is' : 'changes are'} waiting to upload. ${last}`,
+      tone: 'warn',
+    };
+  }
+  if (sync.phase === 'error') {
+    return { label: 'Could not reach the server', detail: sync.error ?? last, tone: 'bad' };
+  }
+  if (sync.pending > 0) {
+    return {
+      label: `${sync.pending} waiting to upload`,
+      detail: last,
+      tone: 'warn',
+    };
+  }
+  return { label: 'Up to date', detail: last, tone: 'ok' };
 }
 
 /** Admin-maintained pick list. Names are plain strings — no separate person record. */

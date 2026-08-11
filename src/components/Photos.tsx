@@ -3,7 +3,14 @@ import { useStore } from '../lib/store';
 import { CameraIcon, TrashIcon, XIcon } from './Icons';
 import { cx } from './ui';
 
-/** Resolves a stored photo id to an object URL and revokes it when it goes away. */
+/**
+ * Resolves a stored photo id to an object URL and revokes it when it goes away.
+ *
+ * `getPhoto` downloads the bytes if this photo came from another device, so the
+ * blob can still be missing afterwards — the file has not arrived yet, or there
+ * is no signal to fetch it with. The thumbnail stays a placeholder in that case
+ * rather than the whole report failing to render.
+ */
 export function usePhotoUrl(photoId: string | null): string | null {
   const { getPhoto } = useStore();
   const [url, setUrl] = useState<string | null>(null);
@@ -16,7 +23,7 @@ export function usePhotoUrl(photoId: string | null): string | null {
     let objectUrl: string | null = null;
     let cancelled = false;
     void getPhoto(photoId).then((photo) => {
-      if (cancelled || !photo) return;
+      if (cancelled || !photo?.blob) return;
       objectUrl = URL.createObjectURL(photo.blob);
       setUrl(objectUrl);
     });

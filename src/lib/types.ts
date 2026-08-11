@@ -122,6 +122,8 @@ export interface Customer {
   templateIds: string[];
   location?: GeoPoint;
   archived?: boolean;
+  /** Account that created the record. Set by sync; absent on local-only data. */
+  createdBy?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -167,6 +169,8 @@ export interface Inspection {
   summaryNotes?: string;
   inspectorSignature?: SignatureRecord;
   customerSignature?: SignatureRecord;
+  /** Account that ran the inspection. The server only lets its author edit it. */
+  createdBy?: string;
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
@@ -176,9 +180,54 @@ export interface PhotoRecord {
   id: string;
   inspectionId: string;
   questionId: string;
-  blob: Blob;
+  /**
+   * Absent on a photo that arrived from another device. Photos are the heaviest
+   * thing the app moves, so a pull takes the record and leaves the bytes on the
+   * server until something actually renders them.
+   */
+  blob?: Blob;
+  /** Key in the `inspection-photos` bucket, set once the file has been uploaded. */
+  storagePath?: string;
   caption?: string;
   createdAt: string;
+}
+
+/** What the sync engine moves, and the local record it maps to. */
+export type SyncEntity = 'customer' | 'inspection' | 'photo' | 'template' | 'shared';
+
+/**
+ * A local change waiting to reach the server. Keyed `<entity>:<recordId>` so a
+ * question answered eight times collapses to one upload rather than eight.
+ */
+export interface OutboxEntry {
+  id: string;
+  entity: SyncEntity;
+  recordId: string;
+  op: 'upsert' | 'delete';
+  queuedAt: string;
+  attempts: number;
+  /**
+   * Where the photo's bytes live. Captured when the delete is queued, because by
+   * the time it is sent the local record is already gone.
+   */
+  storagePath?: string;
+  /** Set when the server refused the change for a reason retrying will not fix. */
+  failedAt?: string;
+  lastError?: string;
+}
+
+/** Where the last pull got to, so the next one only asks for what changed. */
+export interface SyncState {
+  /**
+   * Watermark per table, as the newest timestamp the server has handed us.
+   * Per table rather than one shared value: the tables are read concurrently, so
+   * a single watermark taken from the fastest of them could jump past a row
+   * another table was still writing.
+   */
+  pulledThrough: Record<string, string>;
+  lastSyncedAt: string | null;
+  /** Set once this device has offered what it already holds to the server. */
+  seededRemote: boolean;
 }
 
 /**

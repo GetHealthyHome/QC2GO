@@ -31,6 +31,7 @@ import type {
 import { BUILT_IN_TEMPLATES, defaultSharedConfig } from '../templates';
 import { resolveChecklist, snapshotOf } from './checklist';
 import { todayIso } from './inspection';
+import { useAuth } from './auth';
 
 function newId(prefix: string): string {
   const random =
@@ -79,6 +80,8 @@ const StoreContext = createContext<StoreValue | null>(null);
 const WRITE_DEBOUNCE_MS = 400;
 
 export function StoreProvider({ children }: { children: ReactNode }) {
+  // AuthProvider wraps this, so the signed-in profile is available here.
+  const auth = useAuth();
   const [ready, setReady] = useState(false);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [inspections, setInspections] = useState<Inspection[]>([]);
@@ -406,7 +409,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       templates,
       shared,
       settings,
-      isAdmin: settings.role === 'admin',
+      // With accounts connected the role is the server's answer, not a local
+      // toggle anyone could flip.
+      isAdmin: auth.profile ? auth.profile.role === 'admin' : settings.role === 'admin',
       createCustomer,
       updateCustomer,
       removeCustomer,
@@ -432,6 +437,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       templates,
       shared,
       settings,
+      auth.profile,
       createCustomer,
       updateCustomer,
       removeCustomer,

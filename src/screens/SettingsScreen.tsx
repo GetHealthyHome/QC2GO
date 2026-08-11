@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
+import { useAuth } from '../lib/auth';
 import type { Role } from '../lib/types';
 import { Badge, Button, Card, Field, Screen, TextInput, TopBar, cx } from '../components/ui';
 import {
@@ -28,6 +29,7 @@ const ROLES: Array<{ id: Role; label: string; description: string }> = [
 export function SettingsScreen() {
   const { settings, saveSettings, saveShared, customers, inspections, templates, shared, isAdmin } =
     useStore();
+  const auth = useAuth();
   const [inspectorName, setInspectorName] = useState(settings.inspectorName);
   const [companyName, setCompanyName] = useState(settings.companyName);
   const [saved, setSaved] = useState(false);
@@ -70,9 +72,36 @@ export function SettingsScreen() {
         </div>
 
         <h2 className="mt-8 mb-2.5 px-1 text-[13px] font-bold tracking-wide text-ink-500 uppercase">
-          Role
+          {auth.enabled ? 'Account' : 'Role'}
         </h2>
-        <div className="flex flex-col gap-2">
+
+        {auth.enabled ? (
+          <Card className="p-4">
+            <p className="text-[15px] font-semibold text-ink-900">
+              {auth.profile?.fullName || auth.profile?.email || 'Signed in'}
+            </p>
+            {auth.profile?.fullName && auth.profile.email ? (
+              <p className="text-[13px] text-ink-500">{auth.profile.email}</p>
+            ) : null}
+            <Badge tone={isAdmin ? 'brand' : 'neutral'} className="mt-2">
+              {isAdmin ? 'Admin' : 'Inspector'}
+            </Badge>
+            <p className="mt-2 text-xs text-ink-500">
+              Your role is set by an administrator on your account. It cannot be changed from
+              this device.
+            </p>
+            <Button
+              variant="secondary"
+              block
+              className="mt-3"
+              onClick={() => void auth.signOut()}
+            >
+              Sign out
+            </Button>
+          </Card>
+        ) : null}
+
+        <div className={cx('flex flex-col gap-2', auth.enabled && 'hidden')}>
           {ROLES.map((role) => (
             <button
               key={role.id}
@@ -105,10 +134,13 @@ export function SettingsScreen() {
             </button>
           ))}
         </div>
-        <p className="mt-2 px-1 text-xs text-ink-500">
-          On this device the role only controls which screens are shown. Once accounts are
-          connected, the role comes from the signed-in user and is enforced by the server.
-        </p>
+        {!auth.enabled ? (
+          <p className="mt-2 px-1 text-xs text-ink-500">
+            No backend is configured, so this only controls which screens are shown. With
+            accounts connected, the role comes from the signed-in user and is enforced by the
+            server.
+          </p>
+        ) : null}
 
         {isAdmin ? (
           <>

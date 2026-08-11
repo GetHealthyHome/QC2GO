@@ -1,5 +1,7 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useStore } from './lib/store';
+import { useAuth } from './lib/auth';
+import { SignInScreen } from './screens/SignInScreen';
 import { HomeScreen } from './screens/HomeScreen';
 import { CustomerFormScreen } from './screens/CustomerFormScreen';
 import { CustomerScreen } from './screens/CustomerScreen';
@@ -13,11 +15,13 @@ import { ChecklistEditorScreen } from './screens/ChecklistEditorScreen';
 import { SharedEditorScreen } from './screens/SharedEditorScreen';
 import { CompletedScreen } from './screens/CompletedScreen';
 import { OfflineBanner } from './components/OfflineBanner';
+import { LocalModeBanner } from './components/LocalModeBanner';
 
 export default function App() {
   const { ready } = useStore();
+  const auth = useAuth();
 
-  if (!ready) {
+  if (!ready || !auth.ready) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="flex flex-col items-center gap-3 text-ink-500">
@@ -28,8 +32,14 @@ export default function App() {
     );
   }
 
+  // With a backend configured, nothing is reachable without an account.
+  if (auth.enabled && !auth.session) {
+    return <SignInScreen />;
+  }
+
   return (
     <div className="min-h-screen">
+      <LocalModeBanner />
       <OfflineBanner />
       <Routes>
         <Route path="/" element={<HomeScreen />} />

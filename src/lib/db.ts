@@ -1,14 +1,14 @@
-import type { Inspection, Job, PhotoRecord, Settings, SharedConfig, Template } from './types';
+import type { Customer, Inspection, PhotoRecord, Settings, SharedConfig, Template } from './types';
 
 /**
  * Everything lives in IndexedDB so an inspection survives a dead cell signal in a
  * crawlspace, a backgrounded tab, or a phone that reboots mid-walkthrough.
  */
 const DB_NAME = 'qc2go';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 export const STORES = {
-  jobs: 'jobs',
+  customers: 'customers',
   inspections: 'inspections',
   photos: 'photos',
   settings: 'settings',
@@ -23,14 +23,14 @@ function openDb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
   dbPromise = new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onupgradeneeded = () => {
+    request.onupgradeneeded = (event) => {
       const db = request.result;
-      if (!db.objectStoreNames.contains(STORES.jobs)) {
-        db.createObjectStore(STORES.jobs, { keyPath: 'id' });
+      if (!db.objectStoreNames.contains(STORES.customers)) {
+        db.createObjectStore(STORES.customers, { keyPath: 'id' });
       }
       if (!db.objectStoreNames.contains(STORES.inspections)) {
         const store = db.createObjectStore(STORES.inspections, { keyPath: 'id' });
-        store.createIndex('jobId', 'jobId', { unique: false });
+        store.createIndex('customerId', 'customerId', { unique: false });
       }
       if (!db.objectStoreNames.contains(STORES.photos)) {
         const store = db.createObjectStore(STORES.photos, { keyPath: 'id' });
@@ -42,11 +42,50 @@ function openDb(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORES.templates)) {
         db.createObjectStore(STORES.templates, { keyPath: 'id' });
       }
+      if (event.oldVersion > 0 && event.oldVersion < 3 && request.transaction) {
+        migrateJobsToCustomers(db, request.transaction);
+      }
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
   return dbPromise;
+}
+
+/**
+ * v2 stored jobs keyed by a job name; v3 reorganised around the customer.
+ * Anything already on a device is carried across rather than dropped: the job
+ * name is discarded, and inspections gain the customer link and a visit date.
+ */
+function migrateJobsToCustomers(db: IDBDatabase, transaction: IDBTransaction): void {
+  if (!db.objectStoreNames.contains('jobs')) return;
+
+  const jobs = transaction.objectStore('jobs');
+  const customers = transaction.objectStore(STORES.customers);
+  jobs.getAll().onsuccess = (event) => {
+    const rows = (event.target as IDBRequest<Array<Record<string, unknown>>>).result ?? [];
+    for (const row of rows) {
+      const { name: _discardedJobName, notes, ...rest } = row;
+      customers.put({ ...rest, workScope: notes ?? '', templateIds: [] });
+    }
+  };
+
+  const inspections = transaction.objectStore(STORES.inspections);
+  inspections.getAll().onsuccess = (event) => {
+    const rows = (event.target as IDBRequest<Array<Record<string, unknown>>>).result ?? [];
+    for (const row of rows) {
+      if (row.customerId) continue;
+      const { jobId, ...rest } = row;
+      const createdAt = typeof row.createdAt === 'string' ? row.createdAt : '';
+      inspections.put({
+        ...rest,
+        customerId: jobId,
+        visitDate:
+          (row.info as Record<string, string> | undefined)?.inspectionDate ??
+          createdAt.slice(0, 10),
+      });
+    }
+  };
 }
 
 function tx<T>(
@@ -77,17 +116,18 @@ async function getAllByIndex<T>(store: StoreName, index: string, value: string):
   });
 }
 
-export const jobsRepo = {
-  all: () => tx<Job[]>(STORES.jobs, 'readonly', (s) => s.getAll()),
-  get: (id: string) => tx<Job | undefined>(STORES.jobs, 'readonly', (s) => s.get(id)),
-  put: (job: Job) => tx(STORES.jobs, 'readwrite', (s) => s.put(job)),
-  remove: (id: string) => tx(STORES.jobs, 'readwrite', (s) => s.delete(id)),
+export const customersRepo = {
+  all: () => tx<Customer[]>(STORES.customers, 'readonly', (s) => s.getAll()),
+  get: (id: string) => tx<Customer | undefined>(STORES.customers, 'readonly', (s) => s.get(id)),
+  put: (customer: Customer) => tx(STORES.customers, 'readwrite', (s) => s.put(customer)),
+  remove: (id: string) => tx(STORES.customers, 'readwrite', (s) => s.delete(id)),
 };
 
 export const inspectionsRepo = {
   all: () => tx<Inspection[]>(STORES.inspections, 'readonly', (s) => s.getAll()),
   get: (id: string) => tx<Inspection | undefined>(STORES.inspections, 'readonly', (s) => s.get(id)),
-  byJob: (jobId: string) => getAllByIndex<Inspection>(STORES.inspections, 'jobId', jobId),
+  byCustomer: (customerId: string) =>
+    getAllByIndex<Inspection>(STORES.inspections, 'customerId', customerId),
   put: (inspection: Inspection) => tx(STORES.inspections, 'readwrite', (s) => s.put(inspection)),
   remove: (id: string) => tx(STORES.inspections, 'readwrite', (s) => s.delete(id)),
 };
@@ -145,9 +185,9 @@ export async function deleteInspectionCascade(inspectionId: string): Promise<voi
   await inspectionsRepo.remove(inspectionId);
 }
 
-/** Remove a job together with every inspection and photo underneath it. */
-export async function deleteJobCascade(jobId: string): Promise<void> {
-  const inspections = await inspectionsRepo.byJob(jobId);
+/** Remove a customer together with every inspection and photo underneath it. */
+export async function deleteCustomerCascade(customerId: string): Promise<void> {
+  const inspections = await inspectionsRepo.byCustomer(customerId);
   await Promise.all(inspections.map((inspection) => deleteInspectionCascade(inspection.id)));
-  await jobsRepo.remove(jobId);
+  await customersRepo.remove(customerId);
 }

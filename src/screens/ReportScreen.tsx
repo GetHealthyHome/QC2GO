@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { useChecklist, useInspection, useJob, useStore } from '../lib/store';
+import { useChecklist, useCustomer, useInspection, useStore } from '../lib/store';
 import {
   VISIT_TYPE_LABELS,
   formatDate,
@@ -18,7 +18,7 @@ import { AlertIcon, CheckIcon, MinusIcon, PenIcon, PrinterIcon, ShareIcon, XIcon
 export function ReportScreen() {
   const { inspectionId } = useParams();
   const inspection = useInspection(inspectionId);
-  const job = useJob(inspection?.jobId);
+  const customer = useCustomer(inspection?.customerId);
   const { updateInspection, settings } = useStore();
   const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
 
@@ -44,14 +44,14 @@ export function ReportScreen() {
     const payload = {
       exportedAt: new Date().toISOString(),
       company: settings.companyName || undefined,
-      job,
+      customer,
       inspection: { ...inspection, template: checklist!.templateName },
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `${(job?.name ?? 'inspection').replace(/[^\w-]+/g, '-')}-${inspection.id}.json`;
+    link.download = `${(customer?.customerName ?? 'inspection').replace(/[^\w-]+/g, '-')}-${inspection.id}.json`;
     link.click();
     URL.revokeObjectURL(url);
   }
@@ -68,8 +68,8 @@ export function ReportScreen() {
     <>
       <TopBar
         title="Inspection report"
-        subtitle={job?.name}
-        back={job ? `/jobs/${job.id}` : '/'}
+        subtitle={customer?.customerName}
+        back={customer ? `/customers/${customer.id}` : '/'}
         actions={
           <button
             type="button"
@@ -97,7 +97,7 @@ export function ReportScreen() {
                 {VISIT_TYPE_LABELS[inspection.visitType]}
               </p>
               <h2 className="mt-0.5 text-lg leading-tight font-bold text-ink-900">
-                {job?.name ?? 'Job'}
+                {customer?.customerName ?? 'Customer'}
               </h2>
               <p className="text-[13px] text-ink-500">{checklist.templateName}</p>
             </div>

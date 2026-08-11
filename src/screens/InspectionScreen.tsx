@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
-import { useChecklist, useInspection, useJob, useStore } from '../lib/store';
+import { useChecklist, useCustomer, useInspection, useStore } from '../lib/store';
 import {
   VISIT_TYPE_LABELS,
   getResponse,
@@ -18,7 +18,7 @@ const INFO_STEP = 'job-info';
 export function InspectionScreen() {
   const { inspectionId } = useParams();
   const inspection = useInspection(inspectionId);
-  const job = useJob(inspection?.jobId);
+  const customer = useCustomer(inspection?.customerId);
   const { updateInspection, removePhoto } = useStore();
   const [searchParams, setSearchParams] = useSearchParams();
   const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
@@ -115,9 +115,9 @@ export function InspectionScreen() {
       <div className="sticky top-0 z-30 no-print">
         <TopBar
           sticky={false}
-          title={job?.name ?? 'Inspection'}
+          title={customer?.customerName ?? 'Inspection'}
           subtitle={`${VISIT_TYPE_LABELS[inspection.visitType]} · ${checklist.templateName}`}
-          back={job ? `/jobs/${job.id}` : '/'}
+          back={customer ? `/customers/${customer.id}` : '/'}
         />
         <div className="border-b border-ink-200 bg-white/95 backdrop-blur">
           <div className="mx-auto w-full max-w-3xl px-3 pt-2.5">

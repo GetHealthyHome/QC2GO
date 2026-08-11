@@ -239,3 +239,63 @@ export function todayIso(): string {
   const offset = now.getTimezoneOffset() * 60_000;
   return new Date(now.getTime() - offset).toISOString().slice(0, 10);
 }
+
+export interface Score {
+  /** Percentage of judged items that passed. N/A items are excluded entirely. */
+  percent: number;
+  passed: number;
+  failed: number;
+  judged: number;
+  /** Failed items flagged critical — a high percentage can still hide one of these. */
+  criticalFailures: number;
+}
+
+/**
+ * The number on a QC card. N/A is excluded rather than counted as a pass, so
+ * skipping half a checklist cannot inflate the result.
+ */
+export function scoreOf(inspection: Inspection, sections: Section[]): Score {
+  let passed = 0;
+  let failed = 0;
+  let criticalFailures = 0;
+  for (const section of sections) {
+    for (const question of section.questions) {
+      if (!isScored(question)) continue;
+      const answer = getResponse(inspection, question.id).answer;
+      if (answer === 'yes') passed += 1;
+      if (answer === 'no') {
+        failed += 1;
+        if (question.critical) criticalFailures += 1;
+      }
+    }
+  }
+  const judged = passed + failed;
+  return {
+    percent: judged === 0 ? 0 : Math.round((passed / judged) * 100),
+    passed,
+    failed,
+    judged,
+    criticalFailures,
+  };
+}
+
+export type ScoreBand = 'pass' | 'watch' | 'fail';
+
+/** A single critical failure drops the band regardless of the percentage. */
+export function scoreBand(score: Score): ScoreBand {
+  if (score.criticalFailures > 0) return 'fail';
+  if (score.percent >= 95) return 'pass';
+  if (score.percent >= 85) return 'watch';
+  return 'fail';
+}
+
+/** Groups inspections by the day they cover, most recent first. */
+export function groupByVisitDate<T extends { visitDate: string }>(items: T[]): Array<[string, T[]]> {
+  const byDate = new Map<string, T[]>();
+  for (const item of items) {
+    const list = byDate.get(item.visitDate) ?? [];
+    list.push(item);
+    byDate.set(item.visitDate, list);
+  }
+  return [...byDate.entries()].sort((a, b) => b[0].localeCompare(a[0]));
+}

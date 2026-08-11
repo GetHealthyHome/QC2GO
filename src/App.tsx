@@ -1,9 +1,9 @@
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useStore } from './lib/store';
-import { JobsScreen } from './screens/JobsScreen';
-import { JobFormScreen } from './screens/JobFormScreen';
-import { JobScreen } from './screens/JobScreen';
-import { TemplatePickerScreen } from './screens/TemplatePickerScreen';
+import { HomeScreen } from './screens/HomeScreen';
+import { CustomerFormScreen } from './screens/CustomerFormScreen';
+import { CustomerScreen } from './screens/CustomerScreen';
+import { QuickAuditScreen } from './screens/QuickAuditScreen';
 import { InspectionScreen } from './screens/InspectionScreen';
 import { ReviewScreen } from './screens/ReviewScreen';
 import { ReportScreen } from './screens/ReportScreen';
@@ -32,11 +32,11 @@ export default function App() {
     <div className="min-h-screen">
       <OfflineBanner />
       <Routes>
-        <Route path="/" element={<JobsScreen />} />
-        <Route path="/jobs/new" element={<JobFormScreen />} />
-        <Route path="/jobs/:jobId" element={<JobScreen />} />
-        <Route path="/jobs/:jobId/edit" element={<JobFormScreen />} />
-        <Route path="/jobs/:jobId/start" element={<TemplatePickerScreen />} />
+        <Route path="/" element={<HomeScreen />} />
+        <Route path="/customers/new" element={<CustomerFormScreen />} />
+        <Route path="/customers/:customerId" element={<CustomerScreen />} />
+        <Route path="/customers/:customerId/edit" element={<CustomerFormScreen />} />
+        <Route path="/safety-audit" element={<QuickAuditScreen />} />
         <Route path="/inspections/:inspectionId" element={<InspectionScreen />} />
         <Route path="/inspections/:inspectionId/review" element={<ReviewScreen />} />
         <Route path="/inspections/:inspectionId/report" element={<ReportScreen />} />

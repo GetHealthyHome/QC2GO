@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { useChecklist, useInspection, useJob, useStore } from '../lib/store';
+import { useChecklist, useCustomer, useInspection, useStore } from '../lib/store';
 import {
   VISIT_TYPE_LABELS,
   completionBlockers,
@@ -18,7 +18,7 @@ export function ReviewScreen() {
   const { inspectionId } = useParams();
   const navigate = useNavigate();
   const inspection = useInspection(inspectionId);
-  const job = useJob(inspection?.jobId);
+  const customer = useCustomer(inspection?.customerId);
   const { updateInspection, settings } = useStore();
   const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
   const [attempted, setAttempted] = useState(false);
@@ -76,7 +76,7 @@ export function ReviewScreen() {
     <>
       <TopBar
         title="Review & sign"
-        subtitle={job?.name}
+        subtitle={customer?.customerName}
         back={`/inspections/${inspection.id}`}
       />
 

@@ -51,26 +51,32 @@ const png = Buffer.from(
 await page.goto(BASE + '/', { waitUntil: 'networkidle' });
 await shot('01-empty');
 
-// --- create a job ---
-await page.getByRole('button', { name: 'Add first job' }).click();
-await page.getByLabel('Job name').fill('Marsh Rd — Whole Home Retrofit');
+// --- create a customer ---
+await page.getByRole('button', { name: 'Add first customer' }).click();
 await page.getByLabel('Customer name').fill('Dana Whitfield');
 await page.getByLabel('Job address').fill('118 Marsh Rd, Concord, MA');
 await page.getByLabel('Customer phone').fill('(978) 555-0143');
 await page.getByLabel('Salesperson').fill('R. Alvarez');
 await page.getByLabel('Team leader').fill('M. Okafor');
 await page.getByLabel('Job / work order #').fill('WO-4471');
-await shot('02-new-job');
-await page.getByRole('button', { name: 'Create job' }).click();
-await page.waitForURL(/\/jobs\//);
-await shot('03-job-detail');
+await page.getByLabel('Work Scope / Job Notes').fill('Whole home retrofit: attic air seal + 3 zone ductless.');
+await shot('02-new-customer');
+await page.getByRole('button', { name: 'Create customer' }).click();
+await page.waitForURL(/\/customers\/cust_/);
+const customerUrl = page.url();
+await shot('03-customer-detail');
 
-// --- start an inspection ---
-await page.getByRole('link', { name: 'Start inspection' }).click();
-await shot('04-template-picker');
-await page.getByRole('button', { name: /Mitsubishi Ductless Hyper-Heat/ }).click();
+// --- tick the checklists this job needs, then start one ---
+await page.getByRole('checkbox', { name: /Mitsubishi Ductless Hyper-Heat/ }).click();
+await page.waitForTimeout(300);
+await shot('04-templates-checked');
+check(
+  'ticking a checklist reveals a start button',
+  (await page.getByRole('button', { name: /Mitsubishi Ductless Hyper-Heat/ }).count()) > 0,
+);
+await page.getByRole('button', { name: /Mitsubishi Ductless Hyper-Heat.*Start/s }).click();
 await page.waitForURL(/\/inspections\//);
-const inspectionUrl = page.url();
+const inspectionUrl = page.url().replace(/\?.*$/, '');
 await shot('05-job-info');
 
 await page.getByLabel('Inspected by').fill('A. Holcombe');
@@ -151,10 +157,10 @@ await page.waitForURL(/\/report/);
 await shot('13-report');
 await shot('13-report-full', true);
 
-// back to jobs list with data present
+// back to the home screen with data present
 await page.goto(BASE + '/', { waitUntil: 'networkidle' });
 await page.waitForTimeout(400);
-await shot('14-jobs-list');
+await shot('14-home-screen');
 
 // hard reload straight into the report to prove IndexedDB persistence
 await page.goto(inspectionUrl, { waitUntil: 'networkidle' });
@@ -165,7 +171,7 @@ console.log('--- persistence after hard reload ---');
 const photoCount = await page.locator('img[src^="blob:"]').count();
 const sigCount = await page.locator('img[src^="data:image/png"]').count();
 check('report route survives reload', /\/report$/.test(page.url()), page.url());
-check('job name persisted', text.includes('Marsh Rd'));
+check('customer name persisted', text.includes('Dana Whitfield'));
 check('completed status persisted', text.includes('Completed'));
 check('deficiency note persisted', text.includes('Concord building department'));
 check('deficiency photo persisted', photoCount >= 1, photoCount);
@@ -238,6 +244,20 @@ check(
   (await page.getByText('Attic Prep Pre-Install').count()) > 0,
 );
 
+// --- quick safety audit from the home screen, at a brand new address ---
+await page.goto(BASE + '/', { waitUntil: 'networkidle' });
+await page.getByRole('link', { name: /Safety audit/ }).click();
+await page.waitForURL(/safety-audit/);
+await shot('24-safety-audit-launcher');
+await page.getByLabel('Customer name').fill('Reyes — 4 Oak St');
+await page.getByLabel('Address').fill('4 Oak St, Acton, MA');
+await page.getByRole('button', { name: 'Create and start audit' }).click();
+await page.waitForURL(/\/inspections\//);
+await page.waitForTimeout(500);
+const auditText = await page.locator('body').innerText();
+check('safety audit launches for a new customer', auditText.includes('Quick Safety Audit'));
+await shot('25-safety-audit-running');
+
 // --- the signed report must NOT have picked up the new universal question ---
 await page.goto(inspectionUrl + '/report', { waitUntil: 'networkidle' });
 await page.waitForTimeout(700);
@@ -249,12 +269,9 @@ check(
 await shot('22-report-after-template-edit');
 
 // but a NEW inspection on the same job does pick it up
-await page.goto(BASE + '/#/jobs', { waitUntil: 'networkidle' });
-await page.goto(BASE + '/', { waitUntil: 'networkidle' });
-await page.getByText('Marsh Rd').first().click();
-await page.waitForURL(/\/jobs\//);
-await page.getByRole('link', { name: 'Start inspection' }).click();
-await page.getByRole('button', { name: /Mitsubishi Ductless Hyper-Heat/ }).click();
+await page.goto(customerUrl, { waitUntil: 'networkidle' });
+await page.waitForTimeout(400);
+await page.getByRole('button', { name: /Mitsubishi Ductless Hyper-Heat.*Run again/s }).click();
 await page.waitForURL(/\/inspections\//);
 await page.locator('[data-active]').nth(1).click();
 await page.waitForTimeout(500);

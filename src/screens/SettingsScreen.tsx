@@ -3,7 +3,14 @@ import { Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import type { Role } from '../lib/types';
 import { Badge, Button, Card, Field, Screen, TextInput, TopBar, cx } from '../components/ui';
-import { ChevronRightIcon, ClipboardIcon, SettingsIcon, UserIcon } from '../components/Icons';
+import {
+  ChevronRightIcon,
+  ClipboardIcon,
+  PlusIcon,
+  SettingsIcon,
+  TrashIcon,
+  UserIcon,
+} from '../components/Icons';
 
 const ROLES: Array<{ id: Role; label: string; description: string }> = [
   {
@@ -19,7 +26,8 @@ const ROLES: Array<{ id: Role; label: string; description: string }> = [
 ];
 
 export function SettingsScreen() {
-  const { settings, saveSettings, jobs, inspections, templates } = useStore();
+  const { settings, saveSettings, saveShared, customers, inspections, templates, shared, isAdmin } =
+    useStore();
   const [inspectorName, setInspectorName] = useState(settings.inspectorName);
   const [companyName, setCompanyName] = useState(settings.companyName);
   const [saved, setSaved] = useState(false);
@@ -102,6 +110,30 @@ export function SettingsScreen() {
           connected, the role comes from the signed-in user and is enforced by the server.
         </p>
 
+        {isAdmin ? (
+          <>
+            <h2 className="mt-8 mb-2.5 px-1 text-[13px] font-bold tracking-wide text-ink-500 uppercase">
+              People
+            </h2>
+            <p className="mb-2.5 px-1 text-[13px] text-ink-500">
+              These become the Salesperson and Team Leader dropdowns on every customer, so field
+              staff pick a name instead of typing one.
+            </p>
+            <div className="flex flex-col gap-2.5">
+              <NameList
+                label="Salespeople"
+                names={shared.salespeople}
+                onChange={(salespeople) => void saveShared({ ...shared, salespeople })}
+              />
+              <NameList
+                label="Team leaders"
+                names={shared.teamLeaders}
+                onChange={(teamLeaders) => void saveShared({ ...shared, teamLeaders })}
+              />
+            </div>
+          </>
+        ) : null}
+
         <h2 className="mt-8 mb-2.5 px-1 text-[13px] font-bold tracking-wide text-ink-500 uppercase">
           Checklists
         </h2>
@@ -128,8 +160,8 @@ export function SettingsScreen() {
         <Card className="p-4">
           <div className="grid grid-cols-2 gap-3 text-center">
             <div className="rounded-xl bg-ink-50 py-3">
-              <p className="text-2xl font-bold text-ink-900">{jobs.length}</p>
-              <p className="text-xs font-semibold text-ink-500">Jobs</p>
+              <p className="text-2xl font-bold text-ink-900">{customers.length}</p>
+              <p className="text-xs font-semibold text-ink-500">Customers</p>
             </div>
             <div className="rounded-xl bg-ink-50 py-3">
               <p className="text-2xl font-bold text-ink-900">{inspections.length}</p>
@@ -143,5 +175,74 @@ export function SettingsScreen() {
         </Card>
       </Screen>
     </>
+  );
+}
+
+/** Admin-maintained pick list. Names are plain strings — no separate person record. */
+function NameList({
+  label,
+  names,
+  onChange,
+}: {
+  label: string;
+  names: string[];
+  onChange: (names: string[]) => void;
+}) {
+  const [draft, setDraft] = useState('');
+
+  function add() {
+    const name = draft.trim();
+    if (!name || names.includes(name)) {
+      setDraft('');
+      return;
+    }
+    onChange([...names, name].sort((a, b) => a.localeCompare(b)));
+    setDraft('');
+  }
+
+  return (
+    <Card className="p-4">
+      <p className="text-[13px] font-semibold text-ink-700">{label}</p>
+      {names.length === 0 ? (
+        <p className="mt-1 text-xs text-ink-500">
+          None yet — until one is added, this field stays free text on the customer form.
+        </p>
+      ) : (
+        <ul className="mt-2 flex flex-col gap-1.5">
+          {names.map((name) => (
+            <li
+              key={name}
+              className="flex items-center gap-2 rounded-xl bg-ink-50 px-3 py-2 text-[14px] text-ink-800"
+            >
+              <span className="min-w-0 flex-1 truncate">{name}</span>
+              <button
+                type="button"
+                aria-label={`Remove ${name}`}
+                onClick={() => onChange(names.filter((candidate) => candidate !== name))}
+                className="flex size-8 shrink-0 items-center justify-center rounded-lg text-fail-600 active:bg-fail-50"
+              >
+                <TrashIcon className="size-4" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-2.5 flex gap-2">
+        <TextInput
+          value={draft}
+          placeholder="Add a name"
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') {
+              event.preventDefault();
+              add();
+            }
+          }}
+        />
+        <Button variant="secondary" className="shrink-0 px-4" onClick={add} disabled={!draft.trim()}>
+          <PlusIcon className="size-5" />
+        </Button>
+      </div>
+    </Card>
   );
 }

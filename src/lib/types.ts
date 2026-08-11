@@ -41,8 +41,8 @@ export interface FieldDef {
   required?: boolean;
   options?: string[];
   placeholder?: string;
-  /** Prefill from the parent job record when a new inspection is created. */
-  fromJob?: keyof Job;
+  /** Prefill from the parent customer record when a new inspection is created. */
+  fromJob?: 'customerName' | 'address' | 'salesperson' | 'teamLeader' | 'jobNumber' | 'phone';
   /** Half-width on the two-column form grid. */
   half?: boolean;
 }
@@ -73,6 +73,9 @@ export interface Template {
 export interface SharedConfig {
   infoFields: FieldDef[];
   universalSection: Section;
+  /** Admin-maintained pick lists so field staff choose rather than type. */
+  salespeople: string[];
+  teamLeaders: string[];
   updatedAt: string;
 }
 
@@ -92,17 +95,32 @@ export interface TemplateSnapshot {
 
 export type VisitType = 'site-visit' | 'final-walkthrough' | 'punch-recheck';
 
-export interface Job {
+/** Where a job is, captured on site. Addresses are not geocoded — see lib/geo.ts. */
+export interface GeoPoint {
+  lat: number;
+  lng: number;
+  /** Metres of GPS uncertainty reported by the device. */
+  accuracy?: number;
+  capturedAt: string;
+}
+
+/**
+ * The organizing record for the whole app. One project per customer: everything
+ * — every visit, every checklist, every QC card — hangs off this.
+ */
+export interface Customer {
   id: string;
-  /** The organizing key for the whole app. */
-  name: string;
   customerName: string;
   address: string;
   salesperson: string;
   teamLeader: string;
   phone?: string;
   jobNumber?: string;
-  notes?: string;
+  /** Scope of work plus any access notes. */
+  workScope?: string;
+  /** Checklists that apply to this job, chosen when the customer is created. */
+  templateIds: string[];
+  location?: GeoPoint;
   archived?: boolean;
   createdAt: string;
   updatedAt: string;
@@ -132,11 +150,16 @@ export type InspectionStatus = 'in-progress' | 'completed';
 
 export interface Inspection {
   id: string;
-  jobId: string;
+  customerId: string;
   templateId: string;
   /** Absent on inspections created before snapshots existed; resolved by id then. */
   snapshot?: TemplateSnapshot;
   visitType: VisitType;
+  /**
+   * The day this inspection covers, as YYYY-MM-DD. Jobs run across several days
+   * with a different area of focus each day, so QC cards group by this.
+   */
+  visitDate: string;
   status: InspectionStatus;
   /** Values for the shared job-information fields, keyed by FieldDef id. */
   info: Record<string, string>;

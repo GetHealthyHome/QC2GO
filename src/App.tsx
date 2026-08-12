@@ -2,6 +2,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import { useStore } from './lib/store';
 import { useAuth } from './lib/auth';
 import { SignInScreen } from './screens/SignInScreen';
+import { NoOrganizationScreen } from './screens/NoOrganizationScreen';
 import { HomeScreen } from './screens/HomeScreen';
 import { CustomerFormScreen } from './screens/CustomerFormScreen';
 import { CustomerScreen } from './screens/CustomerScreen';
@@ -35,6 +36,12 @@ export default function App() {
   // With a backend configured, nothing is reachable without an account.
   if (auth.enabled && !auth.session) {
     return <SignInScreen />;
+  }
+
+  // An account exists but belongs to no company. Row-level security would show
+  // it an empty app; say so rather than letting it look like lost data.
+  if (auth.enabled && auth.profile && !auth.profile.organization) {
+    return <NoOrganizationScreen />;
   }
 
   return (

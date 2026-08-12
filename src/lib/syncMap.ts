@@ -45,9 +45,10 @@ function iso(value: unknown, fallback: string): string {
 // Customers
 // ---------------------------------------------------------------------------
 
-export function customerToRow(customer: Customer, userId: string): Row {
+export function customerToRow(customer: Customer, userId: string, orgId: string): Row {
   return {
     id: customer.id,
+    org_id: orgId,
     customer_name: customer.customerName,
     address: customer.address,
     phone: customer.phone ?? null,
@@ -91,20 +92,19 @@ export function rowToCustomer(row: Row): Customer {
 // ---------------------------------------------------------------------------
 
 /**
- * `templateId` is dropped when the checklist is not on the server — the column
- * carries a foreign key, and an inspection must never fail to upload because
- * nobody has synced the checklist library yet. The snapshot holds the real
- * identity of the checklist regardless, which is what reports read.
+ * `templateId` travels as written. It used to be nulled out whenever the
+ * checklist had not reached the server yet, because the column carried a
+ * foreign key and an inspection must never fail to upload behind a checklist
+ * nobody has synced. 0004 dropped that constraint — the snapshot holds the real
+ * identity of the checklist, which is what reports read — so the id can simply
+ * be told the truth.
  */
-export function inspectionToRow(
-  inspection: Inspection,
-  userId: string,
-  knownTemplateIds: ReadonlySet<string>,
-): Row {
+export function inspectionToRow(inspection: Inspection, userId: string, orgId: string): Row {
   return {
     id: inspection.id,
+    org_id: orgId,
     customer_id: inspection.customerId,
-    template_id: knownTemplateIds.has(inspection.templateId) ? inspection.templateId : null,
+    template_id: inspection.templateId || null,
     snapshot: inspection.snapshot ?? {},
     visit_type: inspection.visitType,
     visit_date: inspection.visitDate,
@@ -150,14 +150,27 @@ export function rowToInspection(row: Row): Inspection {
 // Photos
 // ---------------------------------------------------------------------------
 
-/** Objects are keyed `<inspection_id>/<photo_id>.jpg` to match the bucket policies. */
-export function storagePathFor(photo: PhotoRecord): string {
-  return `${photo.inspectionId}/${photo.id}.jpg`;
+/**
+ * Objects are keyed `<org_id>/<inspection_id>/<photo_id>.jpg`.
+ *
+ * The organization comes first because that is what the bucket policy reads:
+ * a caller may touch an object only when the first path segment is their own
+ * company. Without that prefix the whole bucket is one guessed path away from
+ * anybody with an account.
+ */
+export function storagePathFor(photo: PhotoRecord, orgId: string): string {
+  return `${orgId}/${photo.inspectionId}/${photo.id}.jpg`;
 }
 
-export function photoToRow(photo: PhotoRecord, userId: string, storagePath: string): Row {
+export function photoToRow(
+  photo: PhotoRecord,
+  userId: string,
+  orgId: string,
+  storagePath: string,
+): Row {
   return {
     id: photo.id,
+    org_id: orgId,
     inspection_id: photo.inspectionId,
     question_id: photo.questionId,
     storage_path: storagePath,
@@ -183,9 +196,10 @@ export function rowToPhoto(row: Row): PhotoRecord {
 // Templates and the shared config
 // ---------------------------------------------------------------------------
 
-export function templateToRow(template: Template, userId: string): Row {
+export function templateToRow(template: Template, userId: string, orgId: string): Row {
   return {
     id: template.id,
+    org_id: orgId,
     name: template.name,
     category: template.category,
     summary: template.summary,
@@ -215,9 +229,10 @@ export function rowToTemplate(row: Row): Template {
   };
 }
 
-export function sharedToRow(shared: SharedConfig): Row {
+export function sharedToRow(shared: SharedConfig, orgId: string): Row {
   return {
-    singleton: true,
+    // One row per company: 0004 replaced the `singleton` pin with the org id.
+    org_id: orgId,
     info_fields: shared.infoFields,
     universal_section: shared.universalSection,
     salespeople: shared.salespeople,

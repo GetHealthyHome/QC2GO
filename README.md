@@ -83,13 +83,27 @@ next.
 - **Measurement** — a recorded value rather than a judgement (CFM50, micron
   reading, static pressure, delta-T). Shown inline and carried into the report.
 
-## Roles
+## Companies and roles
 
-Two roles, chosen in Settings today and backed by Supabase auth once connected:
+QC2GO is multi-tenant. Every record belongs to a company, and an account belongs
+to exactly one — that single value is the whole boundary, and every policy in the
+database is a comparison against it. Two companies using the same deployment
+cannot see each other's customers, inspections, photos, checklists, or even each
+other's staff lists.
+
+Three roles:
 
 - **Inspector** — runs inspections, and recalls any past one from the Completed
   screen (searchable by job, customer, checklist, or inspector).
 - **Admin** — everything an inspector can do, plus the checklist editor.
+- **Owner** — everything an admin can do, plus inviting people into the company.
+
+A company is created deliberately, in SQL; its owner then invites their own staff
+by email, and nobody reaches a company any other way. An account with no
+invitation belongs to no company and sees an empty app — which it says plainly,
+rather than looking like lost data. [`supabase/README.md`](supabase/README.md)
+covers both, and `npm run check:migrations` proves the boundary holds by creating
+two companies and trying to cross it.
 
 ## Admin edit mode
 
@@ -162,9 +176,11 @@ Only the **publishable** key belongs in these variables. It ships inside the cli
 bundle by design and is protected by row-level security. The `service_role` key
 bypasses RLS entirely and must never reach a browser.
 
-Accounts are created by an administrator in the Supabase dashboard; there is no
-self-signup. Everyone starts as an `inspector` — see
-[`supabase/README.md`](supabase/README.md) for promoting someone to `admin`.
+Accounts arrive by invitation and there is no self-signup: an owner invites an
+address, the person signs up with it, and the signup trigger puts them in that
+company with the role they were given. See
+[`supabase/README.md`](supabase/README.md) for creating a company and its first
+owner.
 
 ## Backend
 
@@ -235,7 +251,9 @@ npm run preview    # serve the build on :4173
 `.github/workflows/ci.yml` runs on every pull request and on pushes to `main`:
 
 1. **Typecheck & build** — `npm run typecheck` then `npm run build`.
-2. **Smoke test** — serves the build and drives it in headless Chromium.
+2. **Migrations & tenant isolation** — applies every migration to a throwaway
+   PostgreSQL, then creates two companies and tries to cross between them.
+3. **Smoke test** — serves the build and drives it in headless Chromium.
 
 Screenshots from the smoke run are uploaded as an artifact on every run, pass or
 fail, so a red build can be inspected without reproducing it locally.
@@ -258,6 +276,25 @@ npm run smoke      # writes screenshots to ./smoke-shots
 ```
 
 Set `SMOKE_URL`, `SMOKE_OUT`, or `CHROMIUM_PATH` to override the defaults.
+
+### Migration and isolation test
+
+`scripts/check-migrations.mjs` applies every migration to a real PostgreSQL and
+then attacks the tenancy boundary from the inside: as one company it tries to
+read, update, delete and insert into another's customers, inspections, roster,
+shared config, tombstones and photo bucket. It also replays what the live
+database will do — three migrations, a company's worth of data, then the fourth —
+and checks the data was adopted rather than orphaned.
+
+A row-level-security policy is the one kind of code where "it compiles" and "it
+is correct" are furthest apart. A policy with a typo installs fine; so does one
+that admits every signed-in caller.
+
+```bash
+DATABASE_URL=postgres://postgres@localhost:5432/postgres npm run check:migrations
+```
+
+It drops and recreates the `public` schema, so point it at something disposable.
 
 ## Layout
 

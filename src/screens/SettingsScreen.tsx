@@ -14,6 +14,17 @@ import {
   UserIcon,
 } from '../components/Icons';
 
+const ROLE_LABELS: Record<Role, string> = {
+  owner: 'Owner',
+  admin: 'Admin',
+  inspector: 'Inspector',
+};
+
+/**
+ * The two roles a device can claim for itself with no backend. Owner is not
+ * here on purpose: it only ever arrives from a signed-in profile, because the
+ * rights it carries are over other people's accounts.
+ */
 const ROLES: Array<{ id: Role; label: string; description: string }> = [
   {
     id: 'inspector',
@@ -85,11 +96,19 @@ export function SettingsScreen() {
               <p className="text-[13px] text-ink-500">{auth.profile.email}</p>
             ) : null}
             <Badge tone={isAdmin ? 'brand' : 'neutral'} className="mt-2">
-              {isAdmin ? 'Admin' : 'Inspector'}
+              {ROLE_LABELS[auth.profile?.role ?? 'inspector']}
             </Badge>
+            {auth.profile?.organization ? (
+              <p className="mt-2 text-[13px] text-ink-600">
+                <span className="text-ink-500">Company: </span>
+                <span className="font-semibold text-ink-900">
+                  {auth.profile.organization.name}
+                </span>
+              </p>
+            ) : null}
             <p className="mt-2 text-xs text-ink-500">
-              Your role is set by an administrator on your account. It cannot be changed from
-              this device.
+              Your company and your role are set on your account. Neither can be changed from
+              this device — everything you can see and save is decided by the server.
             </p>
             <Button
               variant="secondary"

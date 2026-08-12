@@ -220,6 +220,15 @@ export function ReportScreen() {
                           {question.text}
                         </p>
                       </div>
+                      {/* Serial and model numbers. Monospaced and on their own
+                          lines because this is the block somebody transcribes
+                          into a warranty registration, and a 1/l or 0/O read
+                          wrong there is the whole cost of getting it wrong. */}
+                      {question.scannable && response.value?.trim() ? (
+                        <p className="mt-1.5 ml-7 rounded-lg bg-ink-50 p-2.5 font-mono text-[13px] leading-relaxed whitespace-pre-wrap text-ink-800">
+                          {response.value.trim()}
+                        </p>
+                      ) : null}
                       {response.note?.trim() ? (
                         <p
                           className={cx(

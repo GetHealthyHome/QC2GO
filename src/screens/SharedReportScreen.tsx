@@ -206,12 +206,19 @@ export function SharedReportScreen() {
                   <div className="flex items-start gap-2.5">
                     <Mark answer={response?.answer ?? null} />
                     <p className="flex-1 text-[14px] leading-snug text-ink-800">{question.text}</p>
-                    {response?.value ? (
+                    {response?.value && !question.scannable ? (
                       <span className="shrink-0 text-[14px] font-semibold text-ink-900 tabular-nums">
                         {response.value} {question.unit ?? ''}
                       </span>
                     ) : null}
                   </div>
+                  {/* Serials get their own block rather than a cramped column:
+                      this is what a homeowner needs for a warranty claim. */}
+                  {question.scannable && response?.value?.trim() ? (
+                    <p className="mt-1.5 ml-7 rounded-lg bg-ink-50 p-2.5 font-mono text-[13px] leading-relaxed whitespace-pre-wrap text-ink-800">
+                      {response.value.trim()}
+                    </p>
+                  ) : null}
                   {response?.note ? (
                     <p
                       className={cx(

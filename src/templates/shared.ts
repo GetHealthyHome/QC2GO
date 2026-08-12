@@ -81,6 +81,9 @@ export const UNIVERSAL_SECTION: Section = {
       text: 'All equipment model and serial numbers recorded and photographed',
       help: 'Shoot the data plate straight on and legible — this is the warranty record.',
       photoOnPass: true,
+      // The photo is the evidence; the numbers beside it are what warranty
+      // registration is actually keyed on, and nobody can search a photograph.
+      scannable: true,
     },
     {
       id: 'u-registration',

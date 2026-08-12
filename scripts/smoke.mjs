@@ -160,6 +160,10 @@ check('checklist has job info step plus sections', chipCount > 1, chipCount);
 // The step list grows as repeatable sections gain instances, so the count is
 // re-read each time round rather than fixed before the walk starts.
 let addedHeads = 0;
+// Deliberately awkward: a lower-case l and a zero, the two characters somebody
+// transcribing by hand gets wrong, and the whole reason the camera is better.
+const SERIALS = ['OUTDOOR-9F2K1l80', 'HEAD-A-22B7', 'HEAD-B-0O0B9'];
+let serialsFilled = false;
 for (let s = 1; s < (await chips.count()); s++) {
   await chips.nth(s).click();
   await page.waitForTimeout(250);
@@ -206,6 +210,17 @@ for (let s = 1; s < (await chips.count()); s++) {
         continue;
       }
       await yes.click();
+
+      // Serial numbers. Until now these existed only as pixels in a photo of
+      // the data plate — unsearchable, absent from the export, and useless for
+      // a warranty claim without somebody squinting at an image. Typed here
+      // rather than scanned because headless Chromium has no camera; the
+      // decode-to-field path is covered by check:barcode.
+      const serials = card.getByPlaceholder('One per line');
+      if (await serials.count()) {
+        await serials.fill(SERIALS.join('\n'));
+        serialsFilled = true;
+      }
     } else {
       const value = card.locator('input[type="text"]');
       if (await value.count()) await value.fill('412');
@@ -214,6 +229,7 @@ for (let s = 1; s < (await chips.count()); s++) {
   if (s === 1) await shot('10-section-complete');
 }
 
+check('the serial checkpoint offers somewhere to put the numbers', serialsFilled);
 check('a repeatable section accepted two instances', addedHeads === 2, addedHeads);
 const headSteps = await page.getByRole('button', { name: /Primary bedroom|Living room/ }).count();
 check('each head became its own step', headSteps >= 2, headSteps);
@@ -462,6 +478,17 @@ check(
   signed?.totalDeficiencies === 1,
   signed?.totalDeficiencies,
 );
+check(
+  'the serials were stored as data, not just photographed',
+  signed?.responses?.['u-serials']?.value === SERIALS.join('\n'),
+  JSON.stringify(signed?.responses?.['u-serials']?.value),
+);
+const serialReport = await page.locator('body').innerText();
+check(
+  'and every one of them is on the report',
+  SERIALS.every((serial) => serialReport.includes(serial)),
+  SERIALS.filter((serial) => !serialReport.includes(serial)).join(', '),
+);
 
 // --- the punch list gathers what is still open across the whole job ---
 //
@@ -515,6 +542,18 @@ const csv = fs.readFileSync(csvPath, 'utf8');
 check('the export downloads with a dated filename', /qc2go-checkpoints-\d{4}-\d{2}-\d{2}\.csv/.test(download.suggestedFilename()), download.suggestedFilename());
 check('it starts with a byte-order mark so Excel reads it as UTF-8', csv.charCodeAt(0) === 0xfeff);
 check('the failed checkpoint is in it with its explanation', csv.includes('Concord building department'));
+// The point of capturing serials as data rather than as a photograph: the
+// office can pull them out of a file instead of reading them off an image.
+check(
+  'every serial number reached the spreadsheet',
+  SERIALS.every((serial) => csv.includes(serial)),
+  SERIALS.filter((serial) => !csv.includes(serial)).join(', '),
+);
+check(
+  'the multi-line serial cell did not break the row',
+  csv.includes(`"${SERIALS.join('\n')}"`),
+  'serials were not quoted as one cell',
+);
 // The address lives in the other export, so download that one too.
 const [summaryDownload] = await Promise.all([
   page.waitForEvent('download'),

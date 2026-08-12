@@ -32,7 +32,7 @@ reported. It is not yet the platform around that slice.
 | TRD Module | Coverage | One-line read |
 | --- | :---: | --- |
 | 1 — Template Builder & Field Types | **~50%** | Full section/checkpoint authoring with versioned snapshots; 3 question types against the TRD's 15+, and no conditional logic, repeatable sections, or formulas. |
-| 2 — Evidence Capture & Media | **~50%** | Photos captured, downscaled, stored offline and rendered into the report. No annotation, no watermarking, no video/audio, no barcode, no AI. |
+| 2 — Evidence Capture & Media | **~65%** | Photos captured, downscaled, stored offline and rendered into the report; marks drawn beside the image rather than burned into it; time, coordinates and inspector burned into the pixels; barcode capture into serial-number checkpoints on devices with a decoder. No video/audio, no Instacount, no AI, and no crop or rotate. |
 | 3 — KYPiT Verification | **~15%** | Nothing of the risk engine exists. GPS is captured on the customer record, not on the evidence. |
 | 4 — Scoring, Workflows & Automation | **~40%** | A real scoring model with critical-failure override and hard sign-off blockers. No tasks, no punch list, no approval chain, no triage queue. |
 | 5 — Teams, Security & Access | **~70%** | Supabase auth, per-company tenancy with three roles, row-level security proven by an isolation suite, invitation-based onboarding, tombstoned deletes, and expiring read-only report links for people outside the company. No second (team) role layer, no SSO, and an audit ledger that records one action rather than all of them. |
@@ -94,7 +94,7 @@ two-layer org/team hierarchy does not yet — there is one layer, of three roles
 | — Photo as a first-class field type | **Adapt** | QC2GO attaches photos to *any* checkpoint rather than making photo a field type, and `photoOnPass` marks checkpoints that should carry one. This is better for QC work than the TRD's model — keep it, and add a "photo required" hard flag alongside the advisory one. |
 | — Video / Audio | **Gap** | — |
 | — GPS field | **Partial** | GPS is captured once per customer (`src/lib/geo.ts:12`), not per field, and never resolved to an address (deliberate — geocoding is a network call in exactly the places with no signal). |
-| — Barcode / QR (14 formats) | **Gap** | High value here: serial-number capture is already a Universal QC Standard, typed by hand today. |
+| — Barcode / QR (14 formats) | **Partial** | Four formats rather than fourteen — Code 128, Code 39, QR and DataMatrix, which is what appears on equipment data plates. A `scannable` flag rather than a fourth question kind: the QC question on a serial checkpoint is still a scored yes/no, and what was missing was anywhere to put the numbers. They land in `Response.value`, so they export and sync with nothing new having to learn about them. Reads on Android Chrome; an iPhone finds no decoder and the field stays hand-typed. |
 | — Signature (geotagged, timestamped) | **Partial** | `SignatureRecord` carries name + `signedAt` (`src/lib/types.ts:144`). Not geotagged. |
 | — Instacount | **Gap** | — |
 | — Calculated fields (SUM/AVG/MIN/MAX) | **Gap** | Scores are computed (`scoreOf`, `src/lib/inspection.ts:257`) but there is no user-authored formula. |
@@ -115,7 +115,7 @@ two-layer org/team hierarchy does not yet — there is one layer, of three roles
 | Media quality tiers (4 image, 4 video) | **Gap** | One fixed tier: 1600px long edge, JPEG q0.82 (`src/lib/image.ts`). Sensible for 30+ photos on-device, but not configurable, and there is no "ultra high quality" path for a disputed defect photo. |
 | Image annotation — crop, rotate, annotate, text, highlight, freehand | **Partial** | Four of the six: **annotate** (arrow, box), **freehand**, and **text** with three severity colours (`src/components/PhotoAnnotator.tsx`). Stored beside the photo in normalised coordinates rather than burned in, so the evidence is untouched and the same mark lands identically on a phone, in the report and on paper. Crop and rotate are missing, and both are destructive in a way the others are not — worth deciding deliberately rather than adding for completeness. |
 | Metadata watermarking (UTC time, GPS, inspector, inspection ID) | **Built** | See `src/lib/image.ts` and `src/lib/exif.ts`. |
-| Barcode / QR scanning into mapped fields | **Gap** | — |
+| Barcode / QR scanning into mapped fields | **Partial** | `src/lib/barcode.ts` + `src/components/BarcodeScanner.tsx`. The scanner stays open after a hit and keeps reading, because a ductless job has a serial on the outdoor unit and one on every head. Repeats are suppressed, so holding the camera steady on one plate does not fill the field with forty copies of it. Blocked on iOS until a WebAssembly decoder is added — see §13. |
 | Instacount visual counting | **Gap** | — |
 | AI Walkthroughs (video/voice → mapped fields) | **Gap** | — |
 | AI Scribe (grammar, tone, summarize) | **Gap** | Deficiency notes are typed raw. A narrow, cheap version — clean up one note on demand — is a strong early AI win because the note text goes straight to the customer. |
@@ -386,6 +386,46 @@ It also turned up a real bug in the existing JSON export: the download anchor wa
 never attached to the document, which works in some browsers and is silently
 ignored in others — no file, no error, nothing to report. Both exports now share
 one helper that appends, clicks and cleans up.
+
+**Barcode capture into serial checkpoints.** Roadmap item 11. Reading a serial
+off a data plate with the camera instead of gloved thumbs.
+
+The finding that reframed this one: serial numbers were not being typed by hand
+into a field, because **there was no field**. `u-serials` and `q-serials` are
+yes/no checkpoints with a required photo, so the only place a serial existed was
+as pixels inside a photograph — unsearchable, absent from the spreadsheet and the
+webhook payload, and useless for a warranty registration without somebody
+squinting at an image. Scanning was the smaller half of the work; giving the
+numbers somewhere to live was the larger.
+
+They live in `Response.value`, the field a measurement already uses, reached by a
+`scannable` flag on the question rather than a fourth question kind. That keeps
+the QC question scored as the yes/no it has always been ("were they recorded and
+photographed?"), needs no migration because `responses` is a JSON document, and
+means the export, the sync mappers and the payload carried them the day the flag
+was added without any of them learning what a serial is.
+
+Two things about scanning are worth knowing:
+
+**The scanner does not close on the first hit.** A ductless job has a serial on
+the outdoor unit and one on every head, and an inspector who has already climbed
+behind the condenser should get all of them in one go. Which means the detect
+loop reports the same plate several times a second — so `mergeCodes` suppresses
+repeats, and does it in a pure function that is tested without a camera. Without
+it, one steady hand produces forty copies of one serial.
+
+**Control characters are stripped.** Code 128 carries FNC1 and friends, which
+decode to unprintables. Stored, they sit invisibly inside a serial that looks
+exactly right on screen while every comparison against the manufacturer's records
+fails. That is the kind of bug that is never found, only worked around.
+
+**It does not work on iPhones, deliberately.** `BarcodeDetector` is in Chrome on
+Android and absent from Safari with no sign of arriving. The fallback is a
+WebAssembly decoder — a few hundred kilobytes every device would carry offline —
+and that is not worth adding before we know what the crews hold in their hands.
+`findEngine` is the only function that knows what decodes, so adding it later is
+one function and nothing above it changes. Until then the scan button is simply
+never drawn on a device that cannot scan, rather than drawn and broken.
 
 **`0013_report_shares.sql` — a link you can send a homeowner.** Roadmap item 8.
 Until now a finished report left the app as a printed PDF or a JSON file; there

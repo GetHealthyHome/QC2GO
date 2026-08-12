@@ -30,6 +30,7 @@ export const quilt: Template = {
           id: 'q-serials',
           text: 'Serial numbers of the outdoor unit, each Cover, and each Dial recorded',
           photoOnPass: true,
+          scannable: true,
         },
       ],
     },

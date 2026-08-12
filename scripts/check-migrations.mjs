@@ -202,6 +202,7 @@ check('storage policies check the org prefix', () => {
 
 const ACME = '11111111-1111-1111-1111-111111111111';
 const BETA = '22222222-2222-2222-2222-222222222222';
+const ACME_ADMIN = '66666666-6666-6666-6666-666666666666';
 
 psql(`
   insert into auth.users (id, email) values
@@ -231,6 +232,14 @@ check('the signup trigger created a profile for each account', () => {
   return count === '2' ? null : `expected 2 profiles, found ${count}`;
 });
 
+// An admin at Acme, used by several checks below. Created through the
+// invitation path rather than by hand, so it also exercises that path.
+psql(`
+  insert into public.invites (org_id, email, role, invited_by)
+  values ('aaaaaaaa-0000-0000-0000-000000000001', 'admin@acme.test', 'admin', '${ACME}');
+  insert into auth.users (id, email) values ('${ACME_ADMIN}', 'admin@acme.test');
+`);
+
 check('a company sees only its own customers', () => {
   const rows = tx(ACME, `select id from public.customers order by id;`);
   return rows === 'cust-acme' ? null : `Acme sees: ${rows.replace(/\n/g, ', ') || '(nothing)'}`;
@@ -242,8 +251,14 @@ check('a company sees only its own inspections', () => {
 });
 
 check('a company cannot read another roster', () => {
-  const rows = tx(ACME, `select email from public.profiles order by email;`);
-  return rows === 'owner@acme.test' ? null : `Acme sees: ${rows.replace(/\n/g, ', ') || '(nothing)'}`;
+  // Acme's own membership grows as later fixtures are added, so the assertion
+  // is about who is absent rather than an exact roll call.
+  const rows = tx(ACME, `select email from public.profiles order by email;`)
+    .split('\n')
+    .filter(Boolean);
+  const foreign = rows.filter((email) => !email.endsWith('@acme.test'));
+  if (foreign.length > 0) return `Acme sees: ${foreign.join(', ')}`;
+  return rows.includes('owner@acme.test') ? null : 'Acme cannot see its own owner';
 });
 
 check('a company cannot see another organization', () => {
@@ -352,6 +367,52 @@ check('a profile can read its own organization alongside itself', () => {
   return row === 'owner@acme.test @ Acme QC' ? null : `got: ${row || '(nothing)'}`;
 });
 
+check('an owner can withdraw an invitation, an admin cannot', () => {
+  // The Edge Function creates invitations with the service key, but listing and
+  // withdrawing them happen straight from the app through these policies.
+  psql(`insert into public.invites (id, org_id, email, role, invited_by)
+        values ('11111111-aaaa-aaaa-aaaa-111111111111',
+                'aaaaaaaa-0000-0000-0000-000000000001', 'withdraw@acme.test', 'inspector', '${ACME}');`);
+
+  // An admin may see who is outstanding...
+  const seen = tx(ACME_ADMIN, `select email from public.invites where accepted_at is null;`);
+  if (!seen.includes('withdraw@acme.test')) return 'an admin cannot see pending invitations';
+
+  // ...but not withdraw one.
+  tx(ACME_ADMIN, `delete from public.invites where id = '11111111-aaaa-aaaa-aaaa-111111111111';`);
+  const afterAdmin = psql(
+    `select count(*) from public.invites where id = '11111111-aaaa-aaaa-aaaa-111111111111';`,
+  );
+  if (afterAdmin !== '1') return 'an admin withdrew an invitation';
+
+  tx(ACME, `delete from public.invites where id = '11111111-aaaa-aaaa-aaaa-111111111111';`);
+  const afterOwner = psql(
+    `select count(*) from public.invites where id = '11111111-aaaa-aaaa-aaaa-111111111111';`,
+  );
+  return afterOwner === '0' ? null : 'an owner could not withdraw an invitation';
+});
+
+check('one company cannot see or touch another\'s invitations', () => {
+  psql(`insert into public.invites (id, org_id, email, role, invited_by)
+        values ('22222222-bbbb-bbbb-bbbb-222222222222',
+                'aaaaaaaa-0000-0000-0000-000000000001', 'secret@acme.test', 'admin', '${ACME}');`);
+
+  const seen = tx(BETA, `select email from public.invites;`);
+  if (seen.includes('secret@acme.test')) return 'Beta can read Acme\'s invitations';
+
+  tx(BETA, `delete from public.invites where id = '22222222-bbbb-bbbb-bbbb-222222222222';`);
+  const left = psql(
+    `select count(*) from public.invites where id = '22222222-bbbb-bbbb-bbbb-222222222222';`,
+  );
+  return left === '1' ? null : 'Beta withdrew Acme\'s invitation';
+});
+
+check('an inspector cannot read invitations at all', () => {
+  const crew = '55555555-5555-5555-5555-555555555555';
+  const seen = tx(crew, `select count(*) from public.invites;`);
+  return seen === '0' ? null : `an inspector sees ${seen} invitations`;
+});
+
 check('an owner can set their own company logo', () => {
   tx(ACME, `update public.organizations set logo = 'data:image/png;base64,AAAA'
              where id = 'aaaaaaaa-0000-0000-0000-000000000001';`);
@@ -361,12 +422,7 @@ check('an owner can set their own company logo', () => {
 });
 
 check('an admin cannot set the company logo', () => {
-  const admin = '66666666-6666-6666-6666-666666666666';
-  psql(`
-    insert into public.invites (org_id, email, role, invited_by)
-    values ('aaaaaaaa-0000-0000-0000-000000000001', 'admin@acme.test', 'admin', '${ACME}');
-    insert into auth.users (id, email) values ('${admin}', 'admin@acme.test');`);
-  tx(admin, `update public.organizations set logo = 'data:image/png;base64,BBBB'
+  tx(ACME_ADMIN, `update public.organizations set logo = 'data:image/png;base64,BBBB'
               where id = 'aaaaaaaa-0000-0000-0000-000000000001';`);
   const logo = psql(`select logo from public.organizations
                       where id = 'aaaaaaaa-0000-0000-0000-000000000001';`);

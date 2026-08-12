@@ -98,12 +98,16 @@ Three roles:
 - **Admin** — everything an inspector can do, plus the checklist editor.
 - **Owner** — everything an admin can do, plus inviting people into the company.
 
-A company is created deliberately, in SQL; its owner then invites their own staff
-by email, and nobody reaches a company any other way. An account with no
-invitation belongs to no company and sees an empty app — which it says plainly,
-rather than looking like lost data. [`supabase/README.md`](supabase/README.md)
-covers both, and `npm run check:migrations` proves the boundary holds by creating
-two companies and trying to cross it.
+A company is created deliberately, in SQL. From there its owner invites their own
+staff from **Settings → People**: they enter an address and a role, the person
+gets an email, and following the link signs them in and asks them to choose a
+password. Nobody reaches a company any other way — an account with no invitation
+belongs to no company and sees an empty app, which it says plainly rather than
+looking like lost data.
+
+[`supabase/README.md`](supabase/README.md) covers setting up the first company,
+and `npm run check:migrations` proves the boundary holds by creating two
+companies and trying to cross between them.
 
 ## Admin edit mode
 
@@ -185,10 +189,11 @@ bundle by design and is protected by row-level security. The `service_role` key
 bypasses RLS entirely and must never reach a browser.
 
 Accounts arrive by invitation and there is no self-signup: an owner invites an
-address, the person signs up with it, and the signup trigger puts them in that
-company with the role they were given. See
-[`supabase/README.md`](supabase/README.md) for creating a company and its first
-owner.
+address, and the signup trigger puts whoever takes it up into that company with
+the role they were given. Sending the email needs the `service_role` key, so it
+happens in a Supabase Edge Function (`supabase/functions/invite-user`) rather
+than in the browser — see [`supabase/README.md`](supabase/README.md), which also
+covers creating a company and its first owner.
 
 ## Backend
 
@@ -260,7 +265,9 @@ npm run preview    # serve the build on :4173
 
 1. **Typecheck & build** — `npm run typecheck` then `npm run build`.
 2. **Migrations & tenant isolation** — applies every migration to a throwaway
-   PostgreSQL, then creates two companies and tries to cross between them.
+   PostgreSQL, then creates two companies and tries to cross between them. The
+   build job also runs `check:invite-authorization`, which covers the one piece
+   of code that runs with a key that bypasses row-level security.
 3. **Smoke test** — serves the build and drives it in headless Chromium.
 
 Screenshots from the smoke run are uploaded as an artifact on every run, pass or

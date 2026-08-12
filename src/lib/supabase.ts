@@ -26,6 +26,19 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured
         autoRefreshToken: true,
         // The app is a PWA opened from the home screen; keep people signed in.
         storageKey: 'qc2go.auth',
+        /**
+         * PKCE rather than the default implicit flow, and not for the usual
+         * reasons — this app routes with `HashRouter`.
+         *
+         * The implicit flow returns the session in the URL fragment
+         * (`#access_token=...`), which is the same fragment HashRouter uses for
+         * `#/customers/123`. The two collide: whichever reads it first wins,
+         * and an invitation link would either sign nobody in or navigate
+         * nowhere. PKCE returns `?code=` in the query string instead, which
+         * nothing else is competing for.
+         */
+        flowType: 'pkce',
+        detectSessionInUrl: true,
       },
     })
   : null;

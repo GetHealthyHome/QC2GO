@@ -64,13 +64,13 @@ because Module 2 and Module 3 both depend on it.
 (`src/lib/sync.ts`). Functionally equivalent and correct for the platform choice
 — treat the TRD's "SQLite" as descriptive, not prescriptive.
 
-**No middleware tier.** The TRD's architecture diagram puts an API Gateway
-between clients and services. QC2GO talks to Supabase directly from the browser,
-with row-level security as the boundary. Everything in the TRD that needs
-server-side compute — KYPiT, AI, PDF/DOCX rendering, webhooks, cloud sync,
-scheduled reports — has **no home to live in yet**. This is the single largest
-structural gap, and it blocks roughly half the remaining TRD by itself. Supabase
-Edge Functions are the natural answer and require no new infrastructure.
+**A thin middleware tier, newly.** The TRD's architecture diagram puts an API
+Gateway between clients and services. QC2GO talks to Supabase directly from the
+browser with row-level security as the boundary, and that remains the right
+default — but `supabase/functions/invite-user` established the server tier that
+everything needing real compute was queued behind: webhooks, PDF/DOCX rendering,
+cloud sync, scheduled reports, any KYPiT signal. Each of those is now an Edge
+Function to write rather than a piece of architecture to decide.
 
 **Multi-tenant, as of `0004_organizations.sql`.** This was the largest gap in the
 first draft of this document and is now closed. Every tenant-owned table carries
@@ -169,7 +169,7 @@ against adversarial external submitters.
 | Organizations as the tenancy boundary | **Built** | `organizations`, and `org_id` on every tenant-owned table (`supabase/migrations/0004_organizations.sql`). One company per account — `profiles.org_id` — so every policy is a single scalar comparison rather than a join. An account with no company sees an empty app and is told why. |
 | Org roles: Owner / Super Admin / Admin / Member | **Partial** | Three of the four: `owner`, `admin`, `inspector`. Owner manages members and the company; admin authors checklists and amends signed records. Super Admin has no equivalent and no current need. |
 | Team roles: Team Admin / Contributor / Focused Access / Viewer | **Gap** | There is one role layer, not two. Teams inside a company are not modelled. |
-| Provisioning and onboarding | **Built** | A company is created deliberately in SQL; its owner then invites staff by email address, and the signup trigger binds the new account to that company with that role. No invitation means no company. The invitation *sending* still needs an Edge Function — see `supabase/README.md`. |
+| Provisioning and onboarding | **Built** | A company is created deliberately in SQL; from there its owner invites staff from Settings → People. The `invite-user` Edge Function sends the email, and the signup trigger binds the new account to that company with that role. No invitation means no company. |
 | Third-party sharing — Assignee / Collaborator / Viewer, secure link over email/SMS, expiry, passcode | **Gap** | Nothing leaves the app except a printed PDF or a JSON file. A read-only expiring link to a finished report is the obvious first piece and the one a customer would actually use. |
 | SSO — SAML 2.0 / OIDC, OTP, OAuth | **Partial** | Supabase email + password, admin-provisioned, no self-signup. Supabase supports OAuth and OTP with configuration; SAML needs a paid tier. |
 | SOC 2 Type II, annual pen testing | **Gap** | Organizational, not code. |
@@ -343,6 +343,23 @@ exists. What landed, and what it changed in the tables above:
   signed-in caller to any object in it.
 - A migration and isolation suite in CI that creates two companies and tries to
   cross between them.
+
+**The invite flow — `invite-user` and Settings → People.** Provisioning a company
+was a SQL statement and so was every account in it. An owner now invites staff
+from inside the app: the Edge Function verifies them, writes the invitation and
+sends the email; following the link signs the account in and asks for a password
+before anything else.
+
+Two things fell out of it worth recording:
+
+- **PKCE, not the implicit auth flow.** Supabase's default returns the session in
+  the URL fragment, which is the same fragment `HashRouter` uses for its routes.
+  They collide, and an invitation link would either sign nobody in or navigate
+  nowhere. PKCE returns `?code=` in the query string, which nothing competes for.
+- **The service-role key needs a different kind of test.** Everywhere else a
+  mistake is caught by a policy; the invite function has none underneath it. So
+  its decision is a pure function with its own suite, whose central case is that
+  a request body cannot name the company it is inviting into.
 
 **`0005_branding.sql` — per-company letterhead.** The report was headed with a
 per-device value each inspector typed in themselves, so one crew could hand out

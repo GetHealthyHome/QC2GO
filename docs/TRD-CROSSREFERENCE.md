@@ -32,8 +32,8 @@ reported. It is not yet the platform around that slice.
 | TRD Module | Coverage | One-line read |
 | --- | :---: | --- |
 | 1 — Template Builder & Field Types | **~40%** | Full section/checkpoint authoring with versioned snapshots; 3 question types against the TRD's 15+, and no conditional logic, repeatable sections, or formulas. |
-| 2 — Evidence Capture & Media | **~25%** | Photos captured, downscaled, stored offline and rendered into the report. No annotation, no watermarking, no video/audio, no barcode, no AI. |
-| 3 — KYPiT Verification | **~5%** | Nothing of the risk engine exists. GPS is captured on the customer record, not on the evidence. |
+| 2 — Evidence Capture & Media | **~35%** | Photos captured, downscaled, stored offline and rendered into the report. No annotation, no watermarking, no video/audio, no barcode, no AI. |
+| 3 — KYPiT Verification | **~15%** | Nothing of the risk engine exists. GPS is captured on the customer record, not on the evidence. |
 | 4 — Scoring, Workflows & Automation | **~40%** | A real scoring model with critical-failure override and hard sign-off blockers. No tasks, no punch list, no approval chain, no triage queue. |
 | 5 — Teams, Security & Access | **~60%** | Supabase auth, per-company tenancy with three roles, row-level security proven by an isolation suite, invitation-based onboarding, tombstoned deletes. No second (team) role layer, no external sharing, no SSO, no audit ledger. |
 | 6 — Reports, Exports & Integrations | **~25%** | Print-to-PDF report and JSON export; a Postgres summary view for the office. No branded layout engine, no .docx/.xlsx, no webhooks, no cloud sync. |
@@ -114,7 +114,7 @@ two-layer org/team hierarchy does not yet — there is one layer, of three roles
 | Locked capture ratios / orientations | **Gap** | Needs a real in-app viewfinder. |
 | Media quality tiers (4 image, 4 video) | **Gap** | One fixed tier: 1600px long edge, JPEG q0.82 (`src/lib/image.ts`). Sensible for 30+ photos on-device, but not configurable, and there is no "ultra high quality" path for a disputed defect photo. |
 | Image annotation — crop, rotate, annotate, text, highlight, freehand | **Gap** | **Zero of the six tools.** A deficiency photo goes into the report exactly as shot, with the written explanation as the only pointer to what is wrong. Highest-value gap in this module: it is pure client-side canvas work, needs no backend, and directly improves the customer-facing report. |
-| Metadata watermarking (UTC time, GPS, inspector, inspection ID) | **Gap** | Nothing is burned into the pixels. Compounding problem: `compressImage` re-encodes through a canvas, which **strips the original EXIF entirely** — so today a QC2GO photo carries *less* provenance than the raw camera file. Any KYPiT work must read EXIF before compression and carry it forward explicitly. |
+| Metadata watermarking (UTC time, GPS, inspector, inspection ID) | **Built** | See `src/lib/image.ts` and `src/lib/exif.ts`. |
 | Barcode / QR scanning into mapped fields | **Gap** | — |
 | Instacount visual counting | **Gap** | — |
 | AI Walkthroughs (video/voice → mapped fields) | **Gap** | — |
@@ -354,6 +354,28 @@ The two-copy shape is the interesting part, and it comes from this app working
 offline: the reason lands on the inspection so it can be written with no signal
 and read anywhere, and the server keeps its own copy when the change syncs up.
 The first is convenient; the second is the evidence.
+
+**`0009_photo_provenance.sql` — photos say where they came from.** This document
+flagged that `compressImage` re-encodes through a canvas and so destroys EXIF,
+leaving a QC2GO photo with *less* provenance than the raw camera file. Metadata
+is now read off the untouched file first, kept as columns, and burned into the
+pixels — because metadata does not survive a photo being exported to a PDF,
+printed or emailed on, which is most of how these are looked at.
+
+Two things fell out of it that were not the feature:
+
+- **A production bug in `vercel.json`.** `Permissions-Policy: geolocation=()`
+  denies geolocation to *every* origin including this one, so "Use my location"
+  and "Near me" were silently broken on every deployment while working perfectly
+  on localhost, where no header is served. Worse, the browser reports it as the
+  *user* denying permission, so the app's advice on screen was to grant a
+  permission that would never have helped. Fixed, and `check:vercel` now refuses
+  a policy that denies a feature the app uses.
+- **A test fixture that disabled the code it was testing.** The smoke suite's
+  PNG had a corrupt IDAT chunk — bad CRC, would not inflate. The app falls back
+  to storing the original file when an image cannot be decoded, so every photo
+  assertion passed while the downscale path was never once executed. Replaced
+  with a PNG the script builds itself.
 
 **The invite flow — `invite-user` and Settings → People.** Provisioning a company
 was a SQL statement and so was every account in it. An owner now invites staff

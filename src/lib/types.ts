@@ -242,6 +242,22 @@ export interface PhotoRecord {
   /** Key in the `inspection-photos` bucket, set once the file has been uploaded. */
   storagePath?: string;
   caption?: string;
+  /**
+   * When the shutter fired, read from the file's own metadata before anything
+   * re-encoded it. Absent when the camera recorded none — which is common, and
+   * is why `createdAt` is not the same thing.
+   */
+  takenAt?: string;
+  /** Where the photo was taken, if anything could say. */
+  gps?: { lat: number; lng: number };
+  /**
+   * Whether the coordinates came from the camera or from this device at the
+   * moment of capture. Worth keeping apart: one is what the camera claims about
+   * the photo, the other is where the phone was when it was saved.
+   */
+  gpsSource?: 'exif' | 'device';
+  /** False when the browser could not decode the image and the original was kept. */
+  watermarked?: boolean;
   createdAt: string;
 }
 

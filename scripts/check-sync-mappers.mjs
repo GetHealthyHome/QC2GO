@@ -189,6 +189,10 @@ const photo = {
   inspectionId: 'insp-1',
   questionId: 'q1',
   caption: 'Rim joist, south wall',
+  takenAt: '2026-08-11T14:28:11.000Z',
+  gps: { lat: 42.4601, lng: -71.3489 },
+  gpsSource: 'exif',
+  watermarked: true,
   createdAt: '2026-08-11T14:30:00.000Z',
 };
 
@@ -196,6 +200,30 @@ check('photo round trips and keeps its bucket key', () => {
   const path = m.storagePathFor(photo, ORG);
   const back = m.rowToPhoto(m.photoToRow(photo, USER, ORG, path));
   assert.deepEqual(back, { ...photo, storagePath: path });
+});
+
+check('when and where a photo was taken survives the round trip', () => {
+  const back = m.rowToPhoto(m.photoToRow(photo, USER, ORG, 'p'));
+  assert.equal(back.takenAt, '2026-08-11T14:28:11.000Z');
+  assert.deepEqual(back.gps, { lat: 42.4601, lng: -71.3489 });
+  assert.equal(back.gpsSource, 'exif');
+  assert.equal(back.watermarked, true);
+});
+
+check('a photo the camera told us nothing about stays that way', () => {
+  // Most phones strip location from the camera. Absent has to round-trip to
+  // absent rather than to a default that reads as a real answer.
+  const { takenAt, gps, gpsSource, watermarked, ...bare } = photo;
+  const row = m.photoToRow({ ...bare, watermarked: false }, USER, ORG, 'p');
+  assert.equal(row.taken_at, null);
+  assert.equal(row.gps, null);
+  assert.equal(row.gps_source, null);
+
+  const back = m.rowToPhoto(row);
+  assert.equal(back.takenAt, undefined);
+  assert.equal(back.gps, undefined);
+  assert.equal(back.gpsSource, undefined);
+  assert.equal(back.watermarked, undefined, 'not watermarked must not read as watermarked');
 });
 
 check('a bucket key starts with the organization', () => {

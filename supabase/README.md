@@ -1,6 +1,6 @@
 # Supabase backend
 
-Eight migrations:
+Nine migrations:
 
 - **`0001_init.sql`** — tables, roles, row-level security, the photo storage
   bucket, and an office summary view.
@@ -22,11 +22,12 @@ Eight migrations:
   everything outside the app that cannot derive it.
 - **`0008_punch_resolutions.sql`** — closing out a punch item, recorded without
   touching the inspection that raised it.
+- **`0009_photo_provenance.sql`** — when and where a photo was actually taken.
 
-All eight are replayed end-to-end from an empty PostgreSQL 16 database on every
+All nine are replayed end-to-end from an empty PostgreSQL 16 database on every
 pull request, along with a two-company isolation suite — see
 [Proving the boundary](#proving-the-boundary). `0001` through `0004` are applied
-to the live project; `0005` through `0008` apply on merge.
+to the live project; `0005` through `0009` apply on merge.
 
 ## Setting it up
 
@@ -235,6 +236,14 @@ frozen copy of the checklist — questions, sections, and info fields — as it 
 when the inspection began. An admin can reword a question or reorder a section
 without altering a single signed record. Verified: after bumping a template to
 version 2, the existing inspection still reports snapshot version 1.
+
+**`photos.taken_at` / `gps` / `gps_source`** are where the photo says it came
+from. `created_at` is when the record was made on the device; `taken_at` is when
+the shutter fired, and the two are occasionally days apart — a photo picked out
+of the camera roll rather than taken on site is exactly the case worth being able
+to see. `gps_source` separates the camera's claim about the photo from this
+device's position when it was saved; they answer slightly different questions and
+one is far easier to fake.
 
 **`photos`** indexes files in the private `inspection-photos` storage bucket,
 keyed `<org_id>/<inspection_id>/<photo_id>.jpg`. The company comes first because

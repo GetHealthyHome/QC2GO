@@ -2,6 +2,7 @@
 // deficiency, signs off, and verifies everything survives a hard reload.
 // Usage: npm run build && npm run preview &  then  node scripts/smoke.mjs
 import { chromium } from 'playwright';
+import zlib from 'node:zlib';
 import fs from 'node:fs';
 
 const BASE = process.env.SMOKE_URL ?? 'http://localhost:4173';
@@ -43,10 +44,50 @@ const shot = async (name, full = false) => {
   console.log('shot:', name);
 };
 
-const png = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAV0lEQVR4nO3PMQ0AMAzAsPIn3dHoQyXbBPLuzsz3Vwf8ygRlgjJBmaBMUCYoE5QJygRlgjJBmaBMUCYoE5QJygRlgjJBmaBMUCYoE5QJygRlgjJBmaAeVbwBLQ2m+8IAAAAASUVORK5CYII=',
-  'base64',
-);
+/**
+ * A valid PNG, built rather than pasted.
+ *
+ * The base64 blob that used to live here had a corrupt IDAT chunk — bad CRC,
+ * and the compressed data would not inflate. Nothing ever said so: the app
+ * falls back to storing the original file when an image cannot be decoded, so
+ * every photo assertion still passed while the downscale and watermark path
+ * they were meant to cover was never once executed. A fixture that silently
+ * disables the code it is testing is worse than no fixture.
+ *
+ * Mid-grey so that the dark stamp bar burned across the bottom is measurably
+ * darker than the rest of the frame.
+ */
+function makePng(width = 240, height = 180, level = 190) {
+  const raw = Buffer.alloc(height * (width * 3 + 1));
+  for (let y = 0; y < height; y += 1) {
+    const row = y * (width * 3 + 1);
+    raw[row] = 0; // filter: none
+    raw.fill(level, row + 1, row + 1 + width * 3);
+  }
+
+  const chunk = (type, body) => {
+    const length = Buffer.alloc(4);
+    length.writeUInt32BE(body.length);
+    const typed = Buffer.concat([Buffer.from(type, 'ascii'), body]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(zlib.crc32(typed) >>> 0);
+    return Buffer.concat([length, typed, crc]);
+  };
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 2; // colour type: truecolour
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', zlib.deflateSync(raw)),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+const png = makePng();
 
 await page.goto(BASE + '/', { waitUntil: 'networkidle' });
 await shot('01-empty');
@@ -212,6 +253,66 @@ async function storedInspection() {
     inspectionUrl.split('/').pop(),
   );
 }
+
+// The provenance is burned into the pixels, so it survives being exported,
+// printed or pulled out of a report. Nothing in the DOM reports that, so this
+// reads the stored photo back and samples the strip where the stamp is drawn.
+console.log('--- photo provenance ---');
+const stamp = await page.evaluate(async (id) => {
+  // Read the record out of IndexedDB first and finish with it there. Awaiting
+  // inside an IndexedDB callback lets the whole chain be collected mid-flight,
+  // which surfaces as "resulting promise was garbage collected".
+  const photo = await new Promise((resolve, reject) => {
+    const open = indexedDB.open('qc2go');
+    open.onerror = () => reject(open.error);
+    open.onsuccess = () => {
+      const request = open.result
+        .transaction('photos', 'readonly')
+        .objectStore('photos')
+        .index('inspectionId')
+        .getAll(id);
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result?.[0] ?? null);
+    };
+  });
+  if (!photo?.blob) return { error: 'no photo record with bytes' };
+
+  let bitmap;
+  try {
+    bitmap = await createImageBitmap(photo.blob);
+  } catch (problem) {
+    // Report rather than crash the run: what the bytes turned out to be is the
+    // useful part of this failing.
+    return { error: String(problem), size: photo.blob.size, type: photo.blob.type };
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const paint = canvas.getContext('2d');
+  paint.drawImage(bitmap, 0, 0);
+
+  // The stamp sits on a dark bar across the bottom. Sample a row inside it and
+  // one well above, and compare how bright they are.
+  const brightness = (data) => {
+    let total = 0;
+    for (let i = 0; i < data.length; i += 4) total += data[i] + data[i + 1] + data[i + 2];
+    return total / (data.length / 4);
+  };
+  return {
+    watermarked: photo.watermarked,
+    bottom: brightness(paint.getImageData(0, bitmap.height - 12, bitmap.width, 1).data),
+    middle: brightness(paint.getImageData(0, Math.round(bitmap.height / 2), bitmap.width, 1).data),
+    width: bitmap.width,
+  };
+}, inspectionUrl.split('/').pop());
+
+check('the photo was watermarked', stamp?.watermarked === true, JSON.stringify(stamp));
+check(
+  'a dark stamp bar is present along the bottom',
+  stamp !== null && stamp.bottom < stamp.middle,
+  JSON.stringify({ bottom: Math.round(stamp?.bottom), middle: Math.round(stamp?.middle) }),
+);
+check('the photo was downscaled to the long-edge limit', stamp?.width <= 1600, stamp?.width);
 
 // The score is derived on every read inside the app, and written down once at
 // sign-off for everything outside it. Nothing on screen distinguishes the two,

@@ -135,6 +135,18 @@ asserts exactly this: after adding a checkpoint to the universal section, a
 previously signed report is unchanged while a new inspection on the same job
 picks it up.
 
+### Punch list
+
+Every failed checkpoint across a customer's inspections gathers into one list,
+critical items first. The question an inspector arrives with on a return visit is
+"what am I here to re-check?", and this answers it without opening past
+inspections one at a time.
+
+Each item is read back through the snapshot the inspection froze, so the wording
+shown is the wording that was actually failed rather than whatever the checklist
+says today. Marking one corrected records the correction **on the customer**, not
+on the inspection — a signed inspection stays exactly as it was signed.
+
 ### Reopening a signed inspection
 
 An admin can unlock a signed record, but not silently. A reason is required, it

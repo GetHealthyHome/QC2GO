@@ -50,6 +50,9 @@ const customer = {
   jobNumber: 'WO-4471',
   workScope: 'Attic air seal + 2 ductless heads. Dog on site, side gate.',
   templateIds: ['home-performance', 'quilt'],
+  // Nothing closed out yet — a customer with an empty punch list must round-trip
+  // to exactly that rather than to an empty object.
+  punchResolutions: undefined,
   location: { lat: 42.3601, lng: -71.0589, accuracy: 8, capturedAt: '2026-08-11T14:02:00.000Z' },
   archived: false,
   createdBy: USER,
@@ -233,6 +236,26 @@ const shared = {
 check('shared config round trips, pick lists included', () => {
   const back = m.rowToShared(m.sharedToRow(shared, ORG));
   assert.deepEqual(back, shared);
+});
+
+check('punch resolutions round trip', () => {
+  const withResolutions = {
+    ...customer,
+    punchResolutions: {
+      'insp-1:q1': { at: '2026-08-20T15:00:00.000Z', by: 'sam@co.test', note: 'Rim joist sealed' },
+    },
+  };
+  const back = m.rowToCustomer(m.customerToRow(withResolutions, USER, ORG));
+  assert.deepEqual(back.punchResolutions, withResolutions.punchResolutions);
+});
+
+check('a resolution is never recorded against the inspection itself', () => {
+  // A signed inspection is a record. If closing a punch item ever started
+  // writing into one, this is where it would show up first.
+  const row = m.inspectionToRow(inspection, USER, ORG);
+  assert.equal('punch_resolutions' in row, false);
+  const responses = JSON.stringify(row.responses);
+  assert.equal(/resolved/.test(responses), false, 'a response carries no resolution flag');
 });
 
 check('every uploaded row carries the organization', () => {

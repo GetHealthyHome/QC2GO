@@ -5,6 +5,7 @@ import { SignInScreen } from './screens/SignInScreen';
 import { NoOrganizationScreen } from './screens/NoOrganizationScreen';
 import { SetPasswordScreen } from './screens/SetPasswordScreen';
 import { PeopleScreen } from './screens/PeopleScreen';
+import { PunchListScreen } from './screens/PunchListScreen';
 import { HomeScreen } from './screens/HomeScreen';
 import { CustomerFormScreen } from './screens/CustomerFormScreen';
 import { CustomerScreen } from './screens/CustomerScreen';
@@ -63,6 +64,7 @@ export default function App() {
         <Route path="/customers/new" element={<CustomerFormScreen />} />
         <Route path="/customers/:customerId" element={<CustomerScreen />} />
         <Route path="/customers/:customerId/edit" element={<CustomerFormScreen />} />
+        <Route path="/customers/:customerId/punch" element={<PunchListScreen />} />
         <Route path="/safety-audit" element={<QuickAuditScreen />} />
         <Route path="/inspections/:inspectionId" element={<InspectionScreen />} />
         <Route path="/inspections/:inspectionId/review" element={<ReviewScreen />} />

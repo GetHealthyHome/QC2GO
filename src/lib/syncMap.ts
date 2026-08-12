@@ -31,6 +31,14 @@ function optionalText(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
+function resolutionMap(value: unknown): Customer['punchResolutions'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value as Record<string, unknown>);
+  // Absent rather than empty, so a customer with nothing closed out round-trips
+  // to exactly what it started as.
+  return entries.length === 0 ? undefined : (value as Customer['punchResolutions']);
+}
+
 function reopenList(value: unknown): ReopenRecord[] | undefined {
   if (!Array.isArray(value) || value.length === 0) return undefined;
   return value as ReopenRecord[];
@@ -63,6 +71,7 @@ export function customerToRow(customer: Customer, userId: string, orgId: string)
     job_number: customer.jobNumber ?? null,
     work_scope: customer.workScope ?? null,
     template_ids: customer.templateIds,
+    punch_resolutions: customer.punchResolutions ?? {},
     location: customer.location ?? null,
     archived: customer.archived ?? false,
     // Whoever first created it keeps it. The insert policy checks this against
@@ -85,6 +94,7 @@ export function rowToCustomer(row: Row): Customer {
     jobNumber: optionalText(row.job_number),
     workScope: optionalText(row.work_scope),
     templateIds: stringArray(row.template_ids),
+    punchResolutions: resolutionMap(row.punch_resolutions),
     location: (row.location as GeoPoint | null) ?? undefined,
     archived: row.archived === true,
     createdBy: optionalText(row.created_by),

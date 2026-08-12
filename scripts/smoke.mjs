@@ -230,13 +230,6 @@ check(
   signed?.totalDeficiencies,
 );
 
-// --- reopening a signed record demands a reason and keeps it ---
-//
-// This is the one action in the app that rewrites history, so the interesting
-// case is the refusal: cancelling, or entering nothing, must leave the record
-// signed.
-console.log('--- reopening a signed inspection ---');
-
 /**
  * Answer a run of dialogs in order. `page.once` will not do: several one-time
  * listeners all fire on the *first* dialog, so the second one finds it already
@@ -259,6 +252,47 @@ async function withDialogs(answers, action) {
     page.off('dialog', handler);
   }
 }
+
+// --- the punch list gathers what is still open across the whole job ---
+//
+// One checkpoint was failed and documented above, so the customer should now
+// have exactly one open item — reachable without opening the inspection it
+// came from, which is the entire point of the screen.
+console.log('--- punch list ---');
+await page.goto(customerUrl + '/punch', { waitUntil: 'networkidle' });
+await page.waitForTimeout(600);
+const punchText = await page.locator('body').innerText();
+check('the failed checkpoint appears as an open punch item', punchText.includes('Permit'), 
+  JSON.stringify(punchText.slice(0, 140)));
+check('its explanation came with it', punchText.includes('Concord building department'));
+
+await withDialogs(['Permit pulled and posted on site'], () =>
+  page.getByRole('button', { name: /Mark corrected/ }).first().click(),
+);
+const afterClose = await page.locator('body').innerText();
+check('marking it corrected empties the open list', /nothing outstanding/i.test(afterClose));
+check('the correction note is kept', afterClose.includes('Permit pulled and posted on site')
+  || /corrected \(1\)/i.test(afterClose));
+await shot('15c-punch-list', true);
+
+// Closing a punch item must not touch the inspection that raised it — a signed
+// inspection is a record, and this is the change most likely to erode that.
+const stillSigned = await storedInspection();
+const stillFailing = Object.values(stillSigned?.responses ?? {}).filter(
+  (response) => response?.answer === 'no',
+).length;
+check(
+  'closing a punch item left the signed inspection alone',
+  stillSigned?.status === 'completed' && stillFailing === 1,
+  JSON.stringify({ status: stillSigned?.status, failing: stillFailing }),
+);
+
+// --- reopening a signed record demands a reason and keeps it ---
+//
+// This is the one action in the app that rewrites history, so the interesting
+// case is the refusal: cancelling, or entering nothing, must leave the record
+// signed.
+console.log('--- reopening a signed inspection ---');
 
 const reopenButton = page.getByRole('button', { name: /Reopen for editing/ });
 

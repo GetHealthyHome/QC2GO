@@ -146,6 +146,14 @@ question it refers to.
 
 ### Report
 
+Every report is headed with the company handing it over: its name, and its logo
+in a **fixed area reserved whether or not a logo has been uploaded**. That is the
+point of reserving it — a report laid out with the placeholder is laid out
+identically once a company adds its mark, so nothing reflows and no page break
+moves. Any logo shape fits: it is scaled to sit inside the box, never cropped or
+stretched. An owner uploads it under Settings → Company branding, where the
+preview is the report's actual slot at the size the report draws it.
+
 The completed inspection renders as a full report — job information, summary notes,
 every section with pass/fail marks, deficiency explanations with photos, measured
 values, and both signatures. Print styles are set up so **Print → Save as PDF**

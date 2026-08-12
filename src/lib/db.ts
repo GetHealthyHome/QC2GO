@@ -173,6 +173,7 @@ export const outboxRepo = {
 const SETTINGS_KEY = 'app';
 const SHARED_KEY = 'shared';
 const SYNC_KEY = 'sync';
+const PROFILE_KEY = 'profile';
 
 const DEFAULT_SETTINGS: Settings = { inspectorName: '', companyName: '', role: 'inspector' };
 
@@ -187,6 +188,29 @@ export const settingsRepo = {
   },
   put: (value: Settings) =>
     tx(STORES.settings, 'readwrite', (s) => s.put({ key: SETTINGS_KEY, value })),
+};
+
+/**
+ * The last profile this device saw, cached so it survives an offline start.
+ *
+ * The profile — and with it the company, the role and the logo — is read from
+ * the server after sign-in. That read needs a network, and the app is built for
+ * places without one: opening it in a basement would otherwise leave a signed-in
+ * inspector looking at the "no company" screen with their whole day's work
+ * apparently gone. Kept as an opaque record so `lib/auth` owns its shape.
+ */
+export const profileRepo = {
+  async get<T>(): Promise<T | undefined> {
+    const row = await tx<{ key: string; value: T } | undefined>(
+      STORES.settings,
+      'readonly',
+      (s) => s.get(PROFILE_KEY),
+    );
+    return row?.value;
+  },
+  put: <T>(value: T) =>
+    tx(STORES.settings, 'readwrite', (s) => s.put({ key: PROFILE_KEY, value })),
+  clear: () => tx(STORES.settings, 'readwrite', (s) => s.delete(PROFILE_KEY)),
 };
 
 /** Shared config lives in the settings store since there is exactly one row. */

@@ -1,10 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { useAuth } from '../lib/auth';
 import { retryRejected, runSync, type SyncStatus } from '../lib/sync';
 import type { Role } from '../lib/types';
 import { Badge, Button, Card, Field, Screen, TextInput, TopBar, cx } from '../components/ui';
+import { LogoSlot } from '../components/Letterhead';
+import { LOGO_SLOT, prepareLogo } from '../lib/branding';
 import {
   ChevronRightIcon,
   ClipboardIcon,
@@ -162,6 +164,15 @@ export function SettingsScreen() {
           </p>
         ) : null}
 
+        {auth.profile?.role === 'owner' && auth.profile.organization ? (
+          <>
+            <h2 className="mt-8 mb-2.5 px-1 text-[13px] font-bold tracking-wide text-ink-500 uppercase">
+              Company branding
+            </h2>
+            <BrandingCard />
+          </>
+        ) : null}
+
         {isAdmin ? (
           <>
             <h2 className="mt-8 mb-2.5 px-1 text-[13px] font-bold tracking-wide text-ink-500 uppercase">
@@ -237,6 +248,100 @@ export function SettingsScreen() {
  * The honest answer to "is my work safe?". Inspectors finish a job in a basement
  * and drive away; this is where they can see whether it actually went up.
  */
+/**
+ * Where an owner sets the mark that heads every report their company hands out.
+ *
+ * The preview is the report's actual slot, at the size the report draws it —
+ * not an approximation of it. What somebody sees while choosing a logo is what
+ * a customer will be looking at.
+ */
+function BrandingCard() {
+  const auth = useAuth();
+  const organization = auth.profile?.organization ?? null;
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function upload(file: File | undefined) {
+    if (!file) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const logo = await prepareLogo(file);
+      const result = await auth.updateOrganization({ logo });
+      if (result.error) setError(result.error);
+    } catch (problem) {
+      setError(problem instanceof Error ? problem.message : 'That image could not be read.');
+    } finally {
+      setBusy(false);
+      if (inputRef.current) inputRef.current.value = '';
+    }
+  }
+
+  async function clear() {
+    if (!window.confirm('Remove the logo? Reports will be headed with the company name alone.')) {
+      return;
+    }
+    setBusy(true);
+    const result = await auth.updateOrganization({ logo: null });
+    if (result.error) setError(result.error);
+    setBusy(false);
+  }
+
+  return (
+    <Card className="p-4">
+      <p className="text-[15px] font-semibold text-ink-900">{organization?.name}</p>
+      <p className="mt-0.5 text-[13px] text-ink-500">
+        This heads every report your company hands to a customer.
+      </p>
+
+      <div className="mt-3 rounded-xl bg-ink-50 p-3">
+        <p className="mb-2 text-[11px] font-semibold tracking-wide text-ink-400 uppercase">
+          Report letterhead
+        </p>
+        <LogoSlot logo={organization?.logo} companyName={organization?.name ?? 'Your company'} />
+      </div>
+
+      <p className="mt-2 text-xs leading-relaxed text-ink-500">
+        The space is {LOGO_SLOT.width} × {LOGO_SLOT.height} and is held whether or not there is a
+        logo in it, so adding one never moves anything else on the page. Any shape fits — it is
+        scaled to sit inside, never cropped or stretched. A PNG with a transparent background
+        works best.
+      </p>
+
+      {error ? (
+        <p className="mt-2 rounded-lg bg-fail-50 px-3 py-2 text-[13px] font-medium text-fail-700">
+          {error}
+        </p>
+      ) : null}
+
+      <div className="mt-3 flex gap-2">
+        <Button
+          variant="secondary"
+          className="flex-1"
+          disabled={busy}
+          onClick={() => inputRef.current?.click()}
+        >
+          {busy ? 'Working…' : organization?.logo ? 'Replace logo' : 'Upload logo'}
+        </Button>
+        {organization?.logo ? (
+          <Button variant="ghost" disabled={busy} onClick={() => void clear()}>
+            <TrashIcon className="size-4" />
+          </Button>
+        ) : null}
+      </div>
+
+      <input
+        ref={inputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+        className="hidden"
+        onChange={(event) => void upload(event.target.files?.[0])}
+      />
+    </Card>
+  );
+}
+
 function SyncCard() {
   const { sync } = useStore();
   const [retrying, setRetrying] = useState(false);

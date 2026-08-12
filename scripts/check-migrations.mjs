@@ -352,6 +352,51 @@ check('a profile can read its own organization alongside itself', () => {
   return row === 'owner@acme.test @ Acme QC' ? null : `got: ${row || '(nothing)'}`;
 });
 
+check('an owner can set their own company logo', () => {
+  tx(ACME, `update public.organizations set logo = 'data:image/png;base64,AAAA'
+             where id = 'aaaaaaaa-0000-0000-0000-000000000001';`);
+  const logo = psql(`select coalesce(logo, '(none)') from public.organizations
+                      where id = 'aaaaaaaa-0000-0000-0000-000000000001';`);
+  return logo === 'data:image/png;base64,AAAA' ? null : `logo is ${logo}`;
+});
+
+check('an admin cannot set the company logo', () => {
+  const admin = '66666666-6666-6666-6666-666666666666';
+  psql(`
+    insert into public.invites (org_id, email, role, invited_by)
+    values ('aaaaaaaa-0000-0000-0000-000000000001', 'admin@acme.test', 'admin', '${ACME}');
+    insert into auth.users (id, email) values ('${admin}', 'admin@acme.test');`);
+  tx(admin, `update public.organizations set logo = 'data:image/png;base64,BBBB'
+              where id = 'aaaaaaaa-0000-0000-0000-000000000001';`);
+  const logo = psql(`select logo from public.organizations
+                      where id = 'aaaaaaaa-0000-0000-0000-000000000001';`);
+  return logo === 'data:image/png;base64,AAAA' ? null : 'an admin changed the branding';
+});
+
+check('one company cannot rebrand another', () => {
+  tx(BETA, `update public.organizations set name = 'Beta Owns This', logo = null
+             where id = 'aaaaaaaa-0000-0000-0000-000000000001';`);
+  const row = psql(`select name from public.organizations
+                     where id = 'aaaaaaaa-0000-0000-0000-000000000001';`);
+  return row === 'Acme QC' ? null : `Acme is now called "${row}"`;
+});
+
+check('the logo column refuses anything that is not a small image', () => {
+  const notAnImage = psql(
+    `update public.organizations set logo = 'https://example.com/logo.png'
+      where id = 'aaaaaaaa-0000-0000-0000-000000000001';`,
+    { expectError: true },
+  );
+  if (!notAnImage?.error) return 'a bare URL was accepted';
+
+  const tooBig = psql(
+    `update public.organizations set logo = 'data:image/png;base64,' || repeat('A', 600000)
+      where id = 'aaaaaaaa-0000-0000-0000-000000000001';`,
+    { expectError: true },
+  );
+  return tooBig?.error ? null : 'an oversized logo was accepted';
+});
+
 check('a signed-off inspection cannot be rewritten by its author', () => {
   psql(`update public.inspections set status = 'completed' where id = 'insp-acme';`);
   tx(ACME, `update public.inspections set summary_notes = 'edited after signing' where id = 'insp-acme';`);
@@ -388,7 +433,17 @@ psql('drop schema if exists public cascade; create schema public;');
 psql('drop schema if exists auth cascade; drop schema if exists storage cascade;');
 psqlFile(join(here, 'supabase-shim.sql'));
 
-for (const file of migrations.filter((name) => !name.startsWith('0004'))) {
+// Split at the migration that introduces companies: everything before it is
+// the schema as the live database stands today, everything from it onward is
+// what this change applies to that.
+const TENANCY_MIGRATION = '0004_organizations.sql';
+const splitAt = migrations.indexOf(TENANCY_MIGRATION);
+if (splitAt < 0) {
+  console.log(`FAIL  ${TENANCY_MIGRATION} is missing — the backfill scenario cannot run`);
+  process.exit(1);
+}
+
+for (const file of migrations.slice(0, splitAt)) {
   psqlFile(join(root, 'supabase', 'migrations', file));
 }
 psql(`grant all on all tables in schema public to authenticated;
@@ -421,8 +476,10 @@ psql(`
   values ('inspection-photos', 'legacy-insp/legacy-photo.jpg', '${LEGACY_CREW}');
 `);
 
-check('0004 applies to a database with data in it', () => {
-  psqlFile(join(root, 'supabase', 'migrations', '0004_organizations.sql'));
+check('the tenancy migrations apply to a database with data in it', () => {
+  for (const file of migrations.slice(splitAt)) {
+    psqlFile(join(root, 'supabase', 'migrations', file));
+  }
   return null;
 });
 

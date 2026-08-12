@@ -65,6 +65,15 @@ flags, and guidance — lives in [`docs/CHECKLISTS.md`](docs/CHECKLISTS.md), wit
 [`docs/checklists.csv`](docs/checklists.csv) for spreadsheet review. Refresh both
 with `npm run checklists:export` after changing anything under `src/templates/`.
 
+## Where this is headed
+
+The app is built against the VLX Home Services QC Platform technical
+requirements document. [`docs/TRD-CROSSREFERENCE.md`](docs/TRD-CROSSREFERENCE.md)
+reads that document line by line against what exists today — what is met, what is
+partly met, what has not been started, and the handful of requirements worth
+adapting rather than copying — and ends with a sequenced list of what to build
+next.
+
 ### Question types
 
 - **Yes / No / N/A** — the standard checkpoint.

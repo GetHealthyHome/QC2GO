@@ -12,16 +12,33 @@
   --color-ink-800: #212a35;
   --color-ink-900: #121820;
 
-  --color-brand-50: #eef6ff;
-  --color-brand-100: #d9ebff;
-  --color-brand-200: #bcdcff;
-  --color-brand-300: #8ec6ff;
-  --color-brand-400: #59a6fb;
-  --color-brand-500: #3384f2;
-  --color-brand-600: #1c66e0;
-  --color-brand-700: #1751bd;
-  --color-brand-800: #17449a;
-  --color-brand-900: #173c7a;
+  /*
+   * The brand blue is the deep teal-blue of the QC2GO mark (#1b5c7e), not a
+   * generic UI blue. 600 is the mark's own value; the rest of the ramp is built
+   * around it so buttons, badges and the sign-in screen sit beside the logo
+   * rather than clashing with it.
+   */
+  --color-brand-50: #eff7fb;
+  --color-brand-100: #d7ecf5;
+  --color-brand-200: #aed7ea;
+  --color-brand-300: #78b9d8;
+  --color-brand-400: #4394bd;
+  --color-brand-500: #26759f;
+  --color-brand-600: #1b5c7e;
+  --color-brand-700: #174c69;
+  --color-brand-800: #163f57;
+  --color-brand-900: #14344a;
+
+  /*
+   * The mark's orange. Used as an accent — never for pass or fail, which have
+   * their own colours and must not be confused with "look here".
+   */
+  --color-accent-50: #fef3ed;
+  --color-accent-100: #fbe0d0;
+  --color-accent-200: #f7c1a4;
+  --color-accent-500: #e4632a;
+  --color-accent-600: #c9501c;
+  --color-accent-700: #a34118;
 
   --color-pass-50: #ecfdf3;
   --color-pass-100: #d1fadf;

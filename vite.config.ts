@@ -9,13 +9,13 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'icon-192.png', 'icon-512.png'],
+      includeAssets: ['favicon.svg', 'brandmark.svg', 'icon-192.png', 'icon-512.png'],
       manifest: {
         name: 'QC2GO — Quality in motion',
         short_name: 'QC2GO',
         description:
           'Quality in motion. Mobile quality control checklists for home performance, indoor air quality, and heat pump installations.',
-        theme_color: '#0f172a',
+        theme_color: '#1b5c7e',
         background_color: '#f8fafc',
         display: 'standalone',
         orientation: 'portrait',

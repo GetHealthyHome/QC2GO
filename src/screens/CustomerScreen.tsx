@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useCustomer, useCustomerInspections, useStore } from '../lib/store';
 import { questionCount } from '../lib/checklist';
+import { punchListFor } from '../lib/punch';
 import {
   VISIT_TYPE_LABELS,
   formatDate,
@@ -12,7 +13,15 @@ import { categoryLabel } from '../templates';
 import type { Template, VisitType } from '../lib/types';
 import { QCCard } from '../components/QCCard';
 import { Badge, Button, Card, Screen, TopBar, cx } from '../components/ui';
-import { CheckIcon, MapPinIcon, PenIcon, PlusIcon, TrashIcon } from '../components/Icons';
+import {
+  AlertIcon,
+  CheckIcon,
+  ChevronRightIcon,
+  MapPinIcon,
+  PenIcon,
+  PlusIcon,
+  TrashIcon,
+} from '../components/Icons';
 
 const VISIT_TYPES: VisitType[] = ['site-visit', 'final-walkthrough', 'punch-recheck'];
 
@@ -36,6 +45,10 @@ export function CustomerScreen() {
     [available, customer?.templateIds],
   );
   const days = useMemo(() => groupByVisitDate(inspections), [inspections]);
+  const punch = useMemo(
+    () => punchListFor(customer, inspections, templates, shared),
+    [customer, inspections, templates, shared],
+  );
 
   if (!customer) {
     return (
@@ -228,6 +241,46 @@ export function CustomerScreen() {
             </div>
           )}
         </Card>
+
+        {/*
+          The punch list. Shown whenever there is anything on it at all: an
+          inspector arriving for a return visit is asking "what am I here to
+          re-check?", and that question should be answered before they have to
+          go looking through past inspections for it.
+        */}
+        {punch.open.length > 0 || punch.resolved.length > 0 ? (
+          <>
+            <h2 className="mt-6 mb-2.5 px-1 text-[13px] font-bold tracking-wide text-ink-500 uppercase">
+              Punch list
+            </h2>
+            <Card className="active:bg-ink-50">
+              <Link to={`/customers/${customer.id}/punch`} className="flex items-center gap-3 p-4">
+                <AlertIcon
+                  className={cx(
+                    'size-5 shrink-0',
+                    punch.open.length > 0 ? 'text-fail-500' : 'text-pass-500',
+                  )}
+                />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[15px] font-semibold text-ink-900">
+                    {punch.open.length > 0
+                      ? `${punch.open.length} item${punch.open.length === 1 ? '' : 's'} still open`
+                      : 'Everything corrected'}
+                  </p>
+                  <p className="text-xs text-ink-500">
+                    {punch.criticalOpen > 0
+                      ? `${punch.criticalOpen} critical · `
+                      : ''}
+                    {punch.resolved.length} corrected across {inspections.length} checklist
+                    {inspections.length === 1 ? '' : 's'}
+                  </p>
+                </div>
+                {punch.criticalOpen > 0 ? <Badge tone="fail">Critical</Badge> : null}
+                <ChevronRightIcon className="size-5 shrink-0 text-ink-300" />
+              </Link>
+            </Card>
+          </>
+        ) : null}
 
         {/* QC cards, grouped by the day they cover. */}
         <h2 className="mt-6 mb-2.5 px-1 text-[13px] font-bold tracking-wide text-ink-500 uppercase">

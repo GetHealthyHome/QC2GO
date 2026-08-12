@@ -121,11 +121,36 @@ export interface Customer {
   /** Checklists that apply to this job, chosen when the customer is created. */
   templateIds: string[];
   location?: GeoPoint;
+  /**
+   * Punch items corrected on a later visit, keyed by `punchKey`. Spans every
+   * inspection on this customer, which is the level the punch list works at.
+   */
+  punchResolutions?: Record<string, PunchResolution>;
   archived?: boolean;
   /** Account that created the record. Set by sync; absent on local-only data. */
   createdBy?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+/**
+ * A punch item that has been corrected.
+ *
+ * Held on the customer rather than on the response it refers to. A signed
+ * inspection is a record — rewriting a response inside one to say "fixed" would
+ * walk through every guarantee the app makes about that, and invisibly. A
+ * resolution is a new fact, not an edit of an old one.
+ */
+export interface PunchResolution {
+  at: string;
+  /** Who marked it corrected. Absent on local-only data. */
+  by?: string;
+  note?: string;
+}
+
+/** Keys a resolution to the checkpoint it closes, across inspections. */
+export function punchKey(inspectionId: string, questionId: string): string {
+  return `${inspectionId}:${questionId}`;
 }
 
 export interface Response {
@@ -136,8 +161,6 @@ export interface Response {
   photoIds: string[];
   /** Recorded value for measurement / text questions. */
   value?: string;
-  /** Set once the deficiency has been corrected on a re-check. */
-  resolved?: boolean;
   answeredAt?: string;
 }
 

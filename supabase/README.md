@@ -1,6 +1,6 @@
 # Supabase backend
 
-Seven migrations:
+Eight migrations:
 
 - **`0001_init.sql`** — tables, roles, row-level security, the photo storage
   bucket, and an office summary view.
@@ -20,11 +20,13 @@ Seven migrations:
   inspection was unlocked.
 - **`0007_stored_scores.sql`** — the result written down at sign-off, for
   everything outside the app that cannot derive it.
+- **`0008_punch_resolutions.sql`** — closing out a punch item, recorded without
+  touching the inspection that raised it.
 
-All seven are replayed end-to-end from an empty PostgreSQL 16 database on every
+All eight are replayed end-to-end from an empty PostgreSQL 16 database on every
 pull request, along with a two-company isolation suite — see
 [Proving the boundary](#proving-the-boundary). `0001` through `0004` are applied
-to the live project; `0005` through `0007` apply on merge.
+to the live project; `0005` through `0008` apply on merge.
 
 ## Setting it up
 
@@ -216,6 +218,17 @@ be abandoned and the company would silently have no checklists.
 identity of the checklist, and the constraint was doing active harm: the sync
 engine had to null the column out whenever a checklist had not reached the server
 yet, purely to stop inspections failing to upload behind it.
+
+**`customers.punch_resolutions`** records punch items corrected on a later
+visit, keyed `<inspection_id>:<question_id>`. The obvious home for this — a flag
+on the response inside the inspection — is the one place it must not go. A signed
+inspection is a record, and quietly rewriting a response inside one to say
+"fixed" would walk through every guarantee the app makes about that, invisibly:
+the reopen trigger only fires on a status change, so nothing would notice.
+
+A resolution is a new fact rather than an edit of an old one, and the customer is
+where it belongs on its own merits — the punch list is a per-customer view
+spanning every inspection, so its state sits at that level.
 
 **`inspections.snapshot`** is the important one. Each inspection stores its own
 frozen copy of the checklist — questions, sections, and info fields — as it stood

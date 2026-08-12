@@ -231,10 +231,30 @@ export interface SyncState {
 }
 
 /**
- * Admins build and edit checklists; inspectors run them and read past reports.
- * Enforced locally as a UI mode only — the real boundary is Supabase RLS.
+ * Inspectors run checklists and read past reports. Admins also build and edit
+ * them. An owner is the person who answers for the company: everything an admin
+ * can do, plus managing who is in it.
+ *
+ * Enforced locally as a UI mode only — the real boundary is Supabase RLS. Owner
+ * is never chosen on a device; it only ever arrives from a signed-in profile.
  */
-export type Role = 'admin' | 'inspector';
+export type Role = 'owner' | 'admin' | 'inspector';
+
+/** Owners are admins with extra rights, so every admin check has to say so. */
+export function hasAdminRights(role: Role): boolean {
+  return role === 'owner' || role === 'admin';
+}
+
+/**
+ * The company a signed-in person belongs to. One organization per account: an
+ * inspector works for one company, and keeping the boundary a single value
+ * keeps every server-side policy a single comparison.
+ */
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+}
 
 export interface Settings {
   inspectorName: string;

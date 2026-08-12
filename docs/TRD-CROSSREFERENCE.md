@@ -1,8 +1,10 @@
 # QC2GO vs. the VLX Platform TRD
 
 A line-by-line reading of the *VLX Home Services Quality Control Platform —
-Technical Requirements Document, v2.4* against what QC2GO actually is today, at
-commit `606f2c2`.
+Technical Requirements Document, v2.4* against what QC2GO actually is today.
+
+Section 13 at the end records what has changed since the first draft; the tables
+themselves are kept current rather than frozen.
 
 The TRD is the target. This document exists so that the distance to it is a
 known quantity rather than a guess: what already satisfies a requirement, what
@@ -33,7 +35,7 @@ reported. It is not yet the platform around that slice.
 | 2 — Evidence Capture & Media | **~25%** | Photos captured, downscaled, stored offline and rendered into the report. No annotation, no watermarking, no video/audio, no barcode, no AI. |
 | 3 — KYPiT Verification | **~5%** | Nothing of the risk engine exists. GPS is captured on the customer record, not on the evidence. |
 | 4 — Scoring, Workflows & Automation | **~35%** | A real scoring model with critical-failure override and hard sign-off blockers. No tasks, no punch list, no approval chain, no triage queue. |
-| 5 — Teams, Security & Access | **~40%** | Supabase auth, two roles, row-level security, tombstoned deletes. No org/team hierarchy, no external sharing, no SSO, no audit ledger. |
+| 5 — Teams, Security & Access | **~60%** | Supabase auth, per-company tenancy with three roles, row-level security proven by an isolation suite, invitation-based onboarding, tombstoned deletes. No second (team) role layer, no external sharing, no SSO, no audit ledger. |
 | 6 — Reports, Exports & Integrations | **~25%** | Print-to-PDF report and JSON export; a Postgres summary view for the office. No branded layout engine, no .docx/.xlsx, no webhooks, no cloud sync. |
 
 The overall shape of the gap is consistent: **QC2GO has the record, and does not
@@ -70,11 +72,11 @@ scheduled reports — has **no home to live in yet**. This is the single largest
 structural gap, and it blocks roughly half the remaining TRD by itself. Supabase
 Edge Functions are the natural answer and require no new infrastructure.
 
-**Single-tenant.** The TRD models `organization_id` on every payload and a
-two-layer org/team role hierarchy (Module 5). QC2GO has no organization concept
-at all; `profiles.role` is a flat two-value enum
-(`supabase/migrations/0001_init.sql`). Multi-tenancy is cheap to add now and
-expensive to retrofit after real data exists.
+**Multi-tenant, as of `0004_organizations.sql`.** This was the largest gap in the
+first draft of this document and is now closed. Every tenant-owned table carries
+`org_id`, an account belongs to exactly one company, and every policy in the
+database compares against it. The TRD's `organization_id` has a home; its
+two-layer org/team hierarchy does not yet — there is one layer, of three roles.
 
 ---
 
@@ -164,12 +166,15 @@ against adversarial external submitters.
 
 | TRD requirement | Status | As built |
 | --- | :---: | --- |
-| Org roles: Owner / Super Admin / Admin / Member | **Gap** | No organization entity at all. |
-| Team roles: Team Admin / Contributor / Focused Access / Viewer | **Partial** | Two flat roles, `admin` and `inspector` (`supabase/migrations/0001_init.sql`), enforced by RLS rather than by UI trust. Correct as far as it goes; three of the four TRD tiers have no equivalent. |
+| Organizations as the tenancy boundary | **Built** | `organizations`, and `org_id` on every tenant-owned table (`supabase/migrations/0004_organizations.sql`). One company per account — `profiles.org_id` — so every policy is a single scalar comparison rather than a join. An account with no company sees an empty app and is told why. |
+| Org roles: Owner / Super Admin / Admin / Member | **Partial** | Three of the four: `owner`, `admin`, `inspector`. Owner manages members and the company; admin authors checklists and amends signed records. Super Admin has no equivalent and no current need. |
+| Team roles: Team Admin / Contributor / Focused Access / Viewer | **Gap** | There is one role layer, not two. Teams inside a company are not modelled. |
+| Provisioning and onboarding | **Built** | A company is created deliberately in SQL; its owner then invites staff by email address, and the signup trigger binds the new account to that company with that role. No invitation means no company. The invitation *sending* still needs an Edge Function — see `supabase/README.md`. |
 | Third-party sharing — Assignee / Collaborator / Viewer, secure link over email/SMS, expiry, passcode | **Gap** | Nothing leaves the app except a printed PDF or a JSON file. A read-only expiring link to a finished report is the obvious first piece and the one a customer would actually use. |
 | SSO — SAML 2.0 / OIDC, OTP, OAuth | **Partial** | Supabase email + password, admin-provisioned, no self-signup. Supabase supports OAuth and OTP with configuration; SAML needs a paid tier. |
 | SOC 2 Type II, annual pen testing | **Gap** | Organizational, not code. |
 | Field-level immutable audit log (who, what, when, old, new) | **Gap** | Deletes leave tombstones written by trigger (`supabase/migrations/0003_sync.sql`) — good, and the right instinct — but updates overwrite in place with no history. |
+| Tenant isolation is verified, not assumed | **Built — beyond the TRD** | `npm run check:migrations` applies every migration to a real PostgreSQL, then attempts as one company to read, update, delete and insert into another's customers, inspections, roster, shared config, tombstones and photo bucket. CI runs it on every pull request. The TRD asks for SOC 2 and annual pen testing; this is the part of that promise that can be kept in the repository. |
 | Auth cannot be silently absent in production | **Built — beyond the TRD** | The app runs local-only without Supabase env vars, which is convenient and dangerous; a **Local mode** banner makes it visible, and CI builds a configured copy on every PR and asserts nothing is reachable without signing in (`npm run check:auth-gate`). |
 
 ---
@@ -232,7 +237,7 @@ closer to it than the module tables suggest. Mapping what exists:
 | --- | --- |
 | `inspection_id` | `Inspection.id` |
 | `template_id`, `template_version` | `Inspection.templateId`, `snapshot.templateVersion` |
-| `organization_id` | **missing** — no tenant concept |
+| `organization_id` | `org_id`, on every tenant-owned table |
 | `site_metadata.site_id` | `Inspection.customerId` (customer, not site) |
 | `site_metadata.scheduled_gps` | `Customer.location` — captured on arrival, not scheduled |
 | `inspector.user_id` / `email` | `Inspection.createdBy` → `profiles` |
@@ -307,13 +312,48 @@ Ordered by value per unit of effort, with the dependency that gates each one.
 11. **Barcode/QR scanning** into serial-number checkpoints.
 12. **Activity-velocity KYPiT signal** — the cheapest fraud check that matters
     for in-house crews, computable from data already stored.
-13. **Organization/tenant model** — cheap now, expensive after real data.
-14. **Tasks & work orders** with the TRD's six-state lifecycle, once punch lists
+13. **Tasks & work orders** with the TRD's six-state lifecycle, once punch lists
     have proven the assignment model.
-15. **AI Scribe**, then **AI template generation**, then **AI Walkthroughs** —
+14. **AI Scribe**, then **AI template generation**, then **AI Walkthroughs** —
     in that order of cost and risk.
 
 **Deliberately not pursued** (revisit only if the app opens to outside
 subcontractors): domain/WHOIS analytics, carrier lookup, VPN/Tor detection, the
 1,000-template public library, and SOC 2 / SAML, which are procurement rather
 than engineering.
+
+---
+
+## 13. Changes since this document was written
+
+**`0004_organizations.sql` — multi-tenancy.** Item 13 of the roadmap above was
+pulled to the front when the plan became to open QC2GO to other companies, on
+the reasoning this document itself gave: cheap now, expensive after real data
+exists. What landed, and what it changed in the tables above:
+
+- Organizations, with `org_id` on every tenant-owned table and one company per
+  account. Module 5 moved from ~40% to ~60%.
+- Three roles rather than two, with `owner` able to invite.
+- Invitation-based onboarding: a company is provisioned deliberately, its owner
+  invites the rest.
+- Every `using (true)` policy in the database replaced with a company
+  comparison — including the photo bucket, whose read policy had admitted any
+  signed-in caller to any object in it.
+- A migration and isolation suite in CI that creates two companies and tries to
+  cross between them.
+
+Three problems it turned up on the way, each of which would have surfaced as a
+production failure rather than an error:
+
+1. **Checklist ids collided across companies.** The shipped checklists carry
+   fixed ids from code, so every company seeds its own copies under the same
+   ids. A global primary key meant the second company to sync got a unique
+   violation — which the sync engine classifies as permanent, so the upload
+   would have been abandoned and that company would silently have had no
+   checklists. The key is now `(org_id, id)`.
+2. **Record ids were eight hex characters.** Fine for one company; at platform
+   scale that is a coin-flip collision by around 100k records, and a collision
+   is the same permanent primary key violation. Ids now carry a whole UUID.
+3. **Photo deletes chased files that never existed.** Queueing a delete computed
+   a bucket path when the record had none — but a record with no `storagePath`
+   was never uploaded. Now it queues the path only when there is one.

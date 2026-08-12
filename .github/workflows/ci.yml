@@ -47,6 +47,38 @@ jobs:
           path: dist
           retention-days: 3
 
+  migrations:
+    name: Migrations & tenant isolation
+    runs-on: ubuntu-latest
+    # A policy with a typo still installs, and a policy that admits every
+    # signed-in caller still installs. The only way to know one company cannot
+    # read another's inspections is to create two and try it.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install the psql client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Apply every migration and prove the tenancy boundary
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: npm run check:migrations
+
   smoke:
     name: End-to-end smoke test
     runs-on: ubuntu-latest

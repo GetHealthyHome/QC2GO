@@ -26,7 +26,6 @@ import {
   useSyncStatus,
   type SyncStatus,
 } from './sync';
-import { storagePathFor } from './syncMap';
 import { compressImage } from './image';
 import type {
   Customer,
@@ -37,16 +36,27 @@ import type {
   Template,
   VisitType,
 } from './types';
+import { hasAdminRights } from './types';
 import { BUILT_IN_TEMPLATES, defaultSharedConfig } from '../templates';
 import { resolveChecklist, snapshotOf } from './checklist';
 import { todayIso } from './inspection';
 import { useAuth } from './auth';
 
+/**
+ * Record ids, generated on the device because a record has to exist before
+ * there is any network to ask about it.
+ *
+ * The random half used to be the first 8 characters of a UUID, which is fine
+ * for one company and not for many: 8 hex characters collide at around a 1-in-2
+ * chance by 100k records, and a collision here is a primary key violation on
+ * upload — which the sync engine treats as permanent and stops retrying. The
+ * whole UUID costs 28 more characters and removes the question.
+ */
 function newId(prefix: string): string {
   const random =
     typeof crypto !== 'undefined' && 'randomUUID' in crypto
-      ? crypto.randomUUID().slice(0, 8)
-      : Math.random().toString(36).slice(2, 10);
+      ? crypto.randomUUID()
+      : `${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
   return `${prefix}_${Date.now().toString(36)}${random}`;
 }
 
@@ -57,7 +67,10 @@ function newId(prefix: string): string {
  */
 async function queuePhotoDeletes(photos: PhotoRecord[]): Promise<void> {
   for (const photo of photos) {
-    await enqueue('photo', photo.id, 'delete', photo.storagePath ?? storagePathFor(photo));
+    // No `storagePath` means the bytes never reached the bucket, so there is no
+    // file to chase. It used to fall back to a computed path here, which asked
+    // the server to delete an object that had never existed.
+    await enqueue('photo', photo.id, 'delete', photo.storagePath);
   }
 }
 
@@ -171,14 +184,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   // Sync runs under the signed-in account, and stops entirely when there is not
   // one. The role decides whether checklist edits are even offered to the
-  // server — row-level security would refuse them from an inspector anyway.
+  // server — row-level security would refuse them from an inspector anyway —
+  // and the organization is stamped on everything this device uploads.
   useEffect(() => {
     void configureSync(
       auth.session?.user && auth.profile
-        ? { userId: auth.session.user.id, isAdmin: auth.profile.role === 'admin' }
+        ? {
+            userId: auth.session.user.id,
+            isAdmin: hasAdminRights(auth.profile.role),
+            orgId: auth.profile.organization?.id ?? null,
+          }
         : null,
     );
-  }, [auth.session?.user?.id, auth.profile?.role]);
+  }, [auth.session?.user?.id, auth.profile?.role, auth.profile?.organization?.id]);
 
   useEffect(() => startSyncTriggers(), []);
 
@@ -375,7 +393,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const photo = await photosRepo.get(id);
       await photosRepo.remove(id);
       if (!photo) return;
-      await enqueue('photo', id, 'delete', photo.storagePath ?? storagePathFor(photo));
+      await enqueue('photo', id, 'delete', photo.storagePath);
       setInspections((current) =>
         current.map((inspection) => {
           if (inspection.id !== photo.inspectionId) return inspection;
@@ -509,7 +527,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       settings,
       // With accounts connected the role is the server's answer, not a local
       // toggle anyone could flip.
-      isAdmin: auth.profile ? auth.profile.role === 'admin' : settings.role === 'admin',
+      isAdmin: hasAdminRights(auth.profile ? auth.profile.role : settings.role),
       createCustomer,
       updateCustomer,
       removeCustomer,

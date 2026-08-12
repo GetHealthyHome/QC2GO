@@ -26,6 +26,7 @@ await build({
 const m = await import(join(out, 'syncMap.js'));
 
 const USER = '22222222-2222-2222-2222-222222222222';
+const ORG = 'aaaaaaaa-1111-1111-1111-111111111111';
 let failures = 0;
 function check(name, fn) {
   try {
@@ -57,18 +58,18 @@ const customer = {
 };
 
 check('customer survives the round trip intact', () => {
-  const back = m.rowToCustomer(m.customerToRow(customer, USER));
+  const back = m.rowToCustomer(m.customerToRow(customer, USER, ORG));
   assert.deepEqual(back, customer);
 });
 
 check('customer keeps its original author when someone else edits it', () => {
-  const row = m.customerToRow(customer, 'aaaaaaaa-0000-0000-0000-000000000000');
+  const row = m.customerToRow(customer, 'aaaaaaaa-0000-0000-0000-000000000000', ORG);
   assert.equal(row.created_by, USER, 'the editor must not take ownership');
 });
 
 check('a locally created customer is attributed to whoever is signed in', () => {
   const { createdBy, ...local } = customer;
-  const row = m.customerToRow(local, USER);
+  const row = m.customerToRow(local, USER, ORG);
   assert.equal(row.created_by, USER);
 });
 
@@ -103,30 +104,35 @@ const inspection = {
   completedAt: '2026-08-11T16:01:00.000Z',
 };
 
-const known = new Set(['home-performance']);
-
 check('inspection survives the round trip intact', () => {
-  const back = m.rowToInspection(m.inspectionToRow(inspection, USER, known));
+  const back = m.rowToInspection(m.inspectionToRow(inspection, USER, ORG));
   assert.deepEqual(back, inspection);
 });
 
 check('the frozen snapshot is carried across untouched', () => {
-  const back = m.rowToInspection(m.inspectionToRow(inspection, USER, known));
+  const back = m.rowToInspection(m.inspectionToRow(inspection, USER, ORG));
   assert.equal(back.snapshot.templateVersion, 3);
   assert.deepEqual(back.snapshot.sections, inspection.snapshot.sections);
 });
 
 check('a No answer keeps its explanation and its photo', () => {
-  const back = m.rowToInspection(m.inspectionToRow(inspection, USER, known));
+  const back = m.rowToInspection(m.inspectionToRow(inspection, USER, ORG));
   assert.equal(back.responses.q1.note, 'Rim joist left open at the south wall.');
   assert.deepEqual(back.responses.q1.photoIds, ['img-1']);
 });
 
-check('an unknown checklist drops the FK but not the identity', () => {
-  const row = m.inspectionToRow(inspection, USER, new Set());
-  assert.equal(row.template_id, null, 'must not point at a checklist the server lacks');
-  const back = m.rowToInspection(row);
-  assert.equal(back.templateId, 'home-performance', 'recovered from the snapshot');
+check('the checklist id travels as written', () => {
+  // 0004 dropped the foreign key this column used to carry, so there is no
+  // longer any reason to null it out when the server has not seen the
+  // checklist yet.
+  const row = m.inspectionToRow(inspection, USER, ORG);
+  assert.equal(row.template_id, 'home-performance');
+});
+
+check('an inspection with no checklist id still recovers it from the snapshot', () => {
+  const row = m.inspectionToRow({ ...inspection, templateId: '' }, USER, ORG);
+  assert.equal(row.template_id, null, 'an empty string is not an id');
+  assert.equal(m.rowToInspection(row).templateId, 'home-performance');
 });
 
 // ---------------------------------------------------------------------------
@@ -140,10 +146,16 @@ const photo = {
 };
 
 check('photo round trips and keeps its bucket key', () => {
-  const path = m.storagePathFor(photo);
-  assert.equal(path, 'insp-1/img-1.jpg', 'must match the storage RLS policy shape');
-  const back = m.rowToPhoto(m.photoToRow(photo, USER, path));
+  const path = m.storagePathFor(photo, ORG);
+  const back = m.rowToPhoto(m.photoToRow(photo, USER, ORG, path));
   assert.deepEqual(back, { ...photo, storagePath: path });
+});
+
+check('a bucket key starts with the organization', () => {
+  // The storage policy reads the first path segment and compares it to the
+  // caller's company. Any other shape makes the object unreadable at best, and
+  // readable by the wrong company at worst.
+  assert.equal(m.storagePathFor(photo, ORG), `${ORG}/insp-1/img-1.jpg`);
 });
 
 // ---------------------------------------------------------------------------
@@ -162,7 +174,7 @@ const template = {
 };
 
 check('template survives the round trip intact', () => {
-  const back = m.rowToTemplate(m.templateToRow(template, USER));
+  const back = m.rowToTemplate(m.templateToRow(template, USER, ORG));
   assert.deepEqual(back, template);
 });
 
@@ -175,8 +187,18 @@ const shared = {
 };
 
 check('shared config round trips, pick lists included', () => {
-  const back = m.rowToShared(m.sharedToRow(shared));
+  const back = m.rowToShared(m.sharedToRow(shared, ORG));
   assert.deepEqual(back, shared);
+});
+
+check('every uploaded row carries the organization', () => {
+  // The column has a server-side default, but a row that states its company is
+  // a row the with-check policy can refuse. Silence would mean trusting it.
+  assert.equal(m.customerToRow(customer, USER, ORG).org_id, ORG, 'customer');
+  assert.equal(m.inspectionToRow(inspection, USER, ORG).org_id, ORG, 'inspection');
+  assert.equal(m.photoToRow(photo, USER, ORG, 'p').org_id, ORG, 'photo');
+  assert.equal(m.templateToRow(template, USER, ORG).org_id, ORG, 'template');
+  assert.equal(m.sharedToRow(shared, ORG).org_id, ORG, 'shared config');
 });
 
 // ---------------------------------------------------------------------------
@@ -185,7 +207,7 @@ check('shared config round trips, pick lists included', () => {
 
 check('postgres timestamp format normalises to ISO', () => {
   const back = m.rowToCustomer({
-    ...m.customerToRow(customer, USER),
+    ...m.customerToRow(customer, USER, ORG),
     updated_at: '2026-08-11 14:05:00+00',
   });
   assert.equal(back.updatedAt, '2026-08-11T14:05:00.000Z', 'watermark comparison is a string compare');

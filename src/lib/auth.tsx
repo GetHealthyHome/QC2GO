@@ -9,7 +9,7 @@ import {
 } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { authErrorMessage, isSupabaseConfigured, supabase } from './supabase';
-import type { Role } from './types';
+import type { Organization, Role } from './types';
 
 export interface Profile {
   id: string;
@@ -17,6 +17,13 @@ export interface Profile {
   fullName: string;
   role: Role;
   active: boolean;
+  /**
+   * The company this account belongs to, or null when nobody has invited it
+   * into one. Null is a real state, not an error: every server-side policy
+   * compares against it, so an uninvited account sees an empty app rather than
+   * somebody else's data.
+   */
+  organization: Organization | null;
 }
 
 interface AuthValue {
@@ -29,6 +36,8 @@ interface AuthValue {
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
 }
+
+const ROLES: Role[] = ['owner', 'admin', 'inspector'];
 
 const AuthContext = createContext<AuthValue | null>(null);
 
@@ -67,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     void supabase
       .from('profiles')
-      .select('id, email, full_name, role, active')
+      .select('id, email, full_name, role, active, organizations (id, name, slug)')
       .eq('id', session.user.id)
       .maybeSingle()
       .then(({ data, error }) => {
@@ -82,15 +91,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             fullName: '',
             role: 'inspector',
             active: true,
+            organization: null,
           });
           return;
         }
+        // PostgREST returns an embedded row as an object, or as a one-element
+        // array depending on how it reads the relationship. Take either.
+        const embedded = data.organizations;
+        const org = (Array.isArray(embedded) ? embedded[0] : embedded) as
+          | { id: string; name: string; slug: string }
+          | null
+          | undefined;
         setProfile({
           id: data.id,
           email: data.email,
           fullName: data.full_name ?? '',
-          role: data.role === 'admin' ? 'admin' : 'inspector',
+          role: ROLES.includes(data.role as Role) ? (data.role as Role) : 'inspector',
           active: data.active !== false,
+          organization: org ? { id: org.id, name: org.name, slug: org.slug } : null,
         });
       });
     return () => {

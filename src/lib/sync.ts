@@ -77,6 +77,12 @@ export interface SyncStatus {
 interface SyncContext {
   userId: string;
   isAdmin: boolean;
+  /**
+   * The company every row this device writes belongs to. Null when the account
+   * has not been invited into one — the server would refuse every write, so the
+   * engine stays parked rather than filling the outbox with rejections.
+   */
+  orgId: string | null;
 }
 
 let context: SyncContext | null = null;
@@ -196,8 +202,12 @@ export async function configureSync(next: SyncContext | null): Promise<void> {
     emit({ phase: supabase ? 'idle' : 'disabled', error: null });
     return;
   }
-  if (previous && previous.userId !== next.userId) {
+  if (previous && (previous.userId !== next.userId || previous.orgId !== next.orgId)) {
     await syncRepo.reset();
+  }
+  if (!next.orgId) {
+    emit({ phase: 'idle', error: null });
+    return;
   }
   await refreshCounts();
   void runSync();
@@ -343,11 +353,10 @@ async function push(): Promise<void> {
   if (entries.length === 0) return;
 
   const order: SyncEntity[] = ['shared', 'template', 'customer', 'inspection', 'photo'];
-  const knownTemplateIds = await remoteTemplateIds();
 
   for (const entity of order) {
     for (const entry of entries.filter((candidate) => candidate.entity === entity)) {
-      const failure = await pushOne(entry, knownTemplateIds);
+      const failure = await pushOne(entry);
       if (!failure) {
         await outboxRepo.remove(entry.id);
         continue;
@@ -373,18 +382,10 @@ async function push(): Promise<void> {
 }
 
 /** Which checklists exist on the server, so inspections do not break their FK. */
-async function remoteTemplateIds(): Promise<Set<string>> {
-  const { data, error } = await supabase!.from('templates').select('id');
-  if (error) throw new Error(error.message);
-  return new Set((data ?? []).map((row) => String(row.id)));
-}
-
-async function pushOne(
-  entry: OutboxEntry,
-  knownTemplateIds: Set<string>,
-): Promise<PushError | null> {
+async function pushOne(entry: OutboxEntry): Promise<PushError | null> {
   const client = supabase!;
   const userId = context!.userId;
+  const orgId = context!.orgId!;
 
   if (entry.op === 'delete') {
     if (entry.entity === 'photo' && entry.storagePath) {
@@ -405,7 +406,9 @@ async function pushOne(
       const customer = await customersRepo.get(entry.recordId);
       // Deleted locally before it ever went up: nothing left to say.
       if (!customer) return null;
-      const { error } = await client.from('customers').upsert(customerToRow(customer, userId));
+      const { error } = await client
+        .from('customers')
+        .upsert(customerToRow(customer, userId, orgId));
       return classify(error);
     }
     case 'inspection': {
@@ -413,7 +416,7 @@ async function pushOne(
       if (!inspection) return null;
       const { error } = await client
         .from('inspections')
-        .upsert(inspectionToRow(inspection, userId, knownTemplateIds));
+        .upsert(inspectionToRow(inspection, userId, orgId));
       return classify(error);
     }
     case 'photo': {
@@ -426,15 +429,18 @@ async function pushOne(
       const templates = await templatesRepo.all();
       const template = templates.find((candidate) => candidate.id === entry.recordId);
       if (!template) return null;
-      const { error } = await client.from('templates').upsert(templateToRow(template, userId));
-      if (!error) knownTemplateIds.add(template.id);
+      const { error } = await client
+        .from('templates')
+        .upsert(templateToRow(template, userId, orgId), { onConflict: 'org_id,id' });
       return classify(error);
     }
     case 'shared': {
       if (!context!.isAdmin) return null;
       const shared = await sharedRepo.get();
       if (!shared) return null;
-      const { error } = await client.from('shared_config').upsert(sharedToRow(shared));
+      const { error } = await client
+        .from('shared_config')
+        .upsert(sharedToRow(shared, orgId), { onConflict: 'org_id' });
       return classify(error);
     }
     default:
@@ -445,7 +451,7 @@ async function pushOne(
 /** Bytes to the bucket, then the row that makes them findable. */
 async function pushPhoto(photo: PhotoRecord): Promise<PushError | null> {
   const client = supabase!;
-  const path = photo.storagePath ?? storagePathFor(photo);
+  const path = photo.storagePath ?? storagePathFor(photo, context!.orgId!);
 
   const upload = await client.storage
     .from(PHOTO_BUCKET)
@@ -455,7 +461,9 @@ async function pushPhoto(photo: PhotoRecord): Promise<PushError | null> {
     return { message: upload.error.message, permanent: false };
   }
 
-  const { error } = await client.from('photos').upsert(photoToRow(photo, context!.userId, path));
+  const { error } = await client
+    .from('photos')
+    .upsert(photoToRow(photo, context!.userId, context!.orgId!, path));
   if (error) return classify(error);
 
   // Remember where it landed so the record can be reunited with its bytes.
@@ -581,10 +589,12 @@ async function pull(): Promise<boolean> {
  */
 async function pullShared(pendingIds: Set<string>): Promise<boolean> {
   if (pendingIds.has('shared:shared')) return false;
+  // One row per company, and row-level security only ever shows this account
+  // its own — so "the first row I can see" is the right one by construction.
   const { data, error } = await supabase!
     .from('shared_config')
     .select('*')
-    .eq('singleton', true)
+    .limit(1)
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) return false;

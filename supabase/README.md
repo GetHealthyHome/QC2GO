@@ -277,22 +277,80 @@ authenticate to call a function, and the service-role key bypasses row-level
 security entirely, so it is read from Vault at call time along with the
 project's functions URL. Both jobs are written so that a missing secret means
 they do nothing rather than failing every minute against a null header — set the
-two secrets and they start working on their own:
+two secrets and they start working on their own.
+
+The URL is plain configuration and can go in directly:
 
 ```sql
-select vault.create_secret('<service-role key>', 'qc2go_service_role_key');
-select vault.create_secret('https://<ref>.supabase.co/functions/v1',
-                           'qc2go_functions_url');
+select vault.create_secret(
+  'https://<project-ref>.supabase.co/functions/v1',
+  'qc2go_functions_url'
+);
 ```
 
-Until then `cron.job_run_details` shows both jobs succeeding with `0 rows`,
-which is the no-op and not a failure. Check on them there:
+The key is not, and it is worth storing it through a statement that checks
+itself first:
+
+```sql
+do $$
+declare
+  key text := 'REPLACE_EVERYTHING_INSIDE_THESE_QUOTES';
+begin
+  if key !~ '^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$' then
+    raise exception
+      'Not a JWT — nothing was saved. Expected ~200+ chars with exactly two dots, got % chars.',
+      length(key);
+  end if;
+  perform vault.create_secret(key, 'qc2go_service_role_key');
+  raise notice 'Stored a %-character key.', length(key);
+end $$;
+```
+
+Use `vault.update_secret((select id from vault.secrets where name = ...), key)`
+in place of `create_secret` if the secret already exists.
+
+**Why a validating block rather than a plain insert.** Vault will happily store
+the example text, and every guard in the migration is about whether a secret
+*exists* rather than whether it is any good — so a mis-paste is a job that runs
+on time, authenticates with nonsense, and 401s once a minute in a table nobody
+is watching. This version refuses at the point of pasting, where the person is
+still looking. The first draft of these instructions used `'eyJ...PASTE_KEY...'`
+as its placeholder, which passed its own "does it start with eyJ" check; that is
+how this section came to exist.
+
+The service-role key is the JWT-format one that starts `eyJ` — Project Settings
+→ API Keys, under **Legacy API keys** if the project has moved to
+`sb_publishable_` / `sb_secret_` keys. The functions gateway rejects anything it
+cannot parse as a JWT with `UNAUTHORIZED_INVALID_JWT_FORMAT`.
+
+### Is it actually working?
+
+Two tables, and they answer different questions.
+
+`cron.job_run_details` says whether the *job* ran. It reports `succeeded` even
+when the request it made was refused, because sending the request is all the job
+was asked to do:
 
 ```sql
 select j.jobname, d.status, d.return_message, d.start_time
 from cron.job_run_details d join cron.job j using (jobid)
 order by d.start_time desc limit 10;
 ```
+
+`0 rows` means the job skipped itself because a secret is missing — the no-op,
+not a failure. `1 row` means it posted.
+
+`net._http_response` says what came back, and it is the only place a wrong key
+shows up at all:
+
+```sql
+select status_code, left(content, 200) as body, created
+from net._http_response order by id desc limit 5;
+```
+
+A healthy row is `200` with `{"considered":0,"delivered":0,"failed":0}`. A `401`
+with `UNAUTHORIZED_INVALID_JWT_FORMAT` is the stored key; a `401` with
+`UNAUTHORIZED_NO_AUTH_HEADER` means the Vault lookup came back empty.
 
 One trap worth knowing, because it cost a round here: **Supabase pins `pg_net`
 to the `net` schema** and silently ignores a `with schema` clause. A job body

@@ -28,6 +28,7 @@ import {
 } from './sync';
 import { prepareEvidencePhoto } from './image';
 import type {
+  Annotation,
   Customer,
   Inspection,
   PhotoRecord,
@@ -105,6 +106,8 @@ interface StoreValue {
   addPhoto: (inspectionId: string, questionId: string, file: File) => Promise<string>;
   removePhoto: (id: string) => Promise<void>;
   getPhoto: (id: string) => Promise<PhotoRecord | undefined>;
+  /** Replace the marks drawn on a photo. The image bytes are never touched. */
+  savePhotoAnnotations: (id: string, annotations: Annotation[]) => Promise<void>;
   saveSettings: (next: Settings) => Promise<void>;
   saveTemplate: (template: Template) => Promise<void>;
   createTemplate: (input?: Partial<Template>) => Promise<Template>;
@@ -436,6 +439,22 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return fetchPhotoBlob(photo);
   }, []);
 
+  const savePhotoAnnotations = useCallback<StoreValue['savePhotoAnnotations']>(
+    async (id, annotations) => {
+      const photo = await photosRepo.get(id);
+      if (!photo) return;
+      // Absent rather than an empty array when every mark has been removed, so
+      // a photo that was never annotated and one that has been cleared look the
+      // same everywhere downstream.
+      await photosRepo.put({ ...photo, annotations: annotations.length ? annotations : undefined });
+      await enqueue('photo', id, 'upsert');
+      // Photos are read through `getPhoto` rather than held in React state, so
+      // nudging the inspection is what tells the screens to look again.
+      setInspections((current) => [...current]);
+    },
+    [],
+  );
+
   const saveSettings = useCallback<StoreValue['saveSettings']>(async (next) => {
     setSettings(next);
     await settingsRepo.put(next);
@@ -544,6 +563,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addPhoto,
       removePhoto,
       getPhoto,
+      savePhotoAnnotations,
       saveSettings,
       saveTemplate,
       createTemplate,
@@ -572,6 +592,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addPhoto,
       removePhoto,
       getPhoto,
+      savePhotoAnnotations,
       saveSettings,
       saveTemplate,
       createTemplate,

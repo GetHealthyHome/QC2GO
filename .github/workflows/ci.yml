@@ -48,6 +48,12 @@ jobs:
       - name: Check the EXIF reader
         run: npm run check:exif
 
+      # A mark drawn on a phone has to land in the same place in a report and
+      # again on paper. If the geometry drifts, an arrow points at the wrong
+      # part of a photo in front of a customer.
+      - name: Check the annotation geometry
+        run: npm run check:annotations
+
       - name: Build
         run: npm run build
 

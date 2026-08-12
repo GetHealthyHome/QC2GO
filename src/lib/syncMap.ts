@@ -31,6 +31,11 @@ function optionalText(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
+function annotationList(value: unknown): PhotoRecord['annotations'] {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  return value as PhotoRecord['annotations'];
+}
+
 function resolutionMap(value: unknown): Customer['punchResolutions'] {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
   const entries = Object.entries(value as Record<string, unknown>);
@@ -206,6 +211,7 @@ export function photoToRow(
     gps: photo.gps ?? null,
     gps_source: photo.gpsSource ?? null,
     watermarked: photo.watermarked ?? false,
+    annotations: photo.annotations ?? [],
     created_by: userId,
     created_at: photo.createdAt,
   };
@@ -223,6 +229,7 @@ export function rowToPhoto(row: Row): PhotoRecord {
     gps: (row.gps as PhotoRecord['gps'] | null) ?? undefined,
     gpsSource: (optionalText(row.gps_source) as PhotoRecord['gpsSource']) ?? undefined,
     watermarked: row.watermarked === true ? true : undefined,
+    annotations: annotationList(row.annotations),
     createdAt: iso(row.created_at, new Date().toISOString()),
   };
 }

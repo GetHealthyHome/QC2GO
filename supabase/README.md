@@ -1,6 +1,6 @@
 # Supabase backend
 
-Nine migrations:
+Ten migrations:
 
 - **`0001_init.sql`** — tables, roles, row-level security, the photo storage
   bucket, and an office summary view.
@@ -23,11 +23,13 @@ Nine migrations:
 - **`0008_punch_resolutions.sql`** — closing out a punch item, recorded without
   touching the inspection that raised it.
 - **`0009_photo_provenance.sql`** — when and where a photo was actually taken.
+- **`0010_annotations.sql`** — marks drawn over a photo, stored beside it rather
+  than burned into it.
 
-All nine are replayed end-to-end from an empty PostgreSQL 16 database on every
+All ten are replayed end-to-end from an empty PostgreSQL 16 database on every
 pull request, along with a two-company isolation suite — see
 [Proving the boundary](#proving-the-boundary). `0001` through `0004` are applied
-to the live project; `0005` through `0009` apply on merge.
+to the live project; `0005` through `0010` apply on merge.
 
 ## Setting it up
 
@@ -244,6 +246,13 @@ of the camera roll rather than taken on site is exactly the case worth being abl
 to see. `gps_source` separates the camera's claim about the photo from this
 device's position when it was saved; they answer slightly different questions and
 one is far easier to fake.
+
+**`photos.annotations`** holds the marks drawn over a photo — arrows, boxes,
+freehand, labels — in coordinates normalised to 0–1. Never burned into the image:
+the stored bytes stay exactly as the camera produced them, so an arrow in the
+wrong place can be moved and nobody has to wonder whether the pixels underneath
+were altered. Normalised coordinates are what let the same mark land in the same
+place on a phone, in a report on a laptop, and on A4 paper.
 
 **`photos`** indexes files in the private `inspection-photos` storage bucket,
 keyed `<org_id>/<inspection_id>/<photo_id>.jpg`. The company comes first because

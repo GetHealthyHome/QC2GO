@@ -1,4 +1,7 @@
 /** Core domain model for QC2GO. */
+import type { Annotation } from './annotate';
+
+export type { Annotation };
 
 /** The three-state answer every checklist question uses. */
 export type Answer = 'yes' | 'no' | 'na';
@@ -258,6 +261,12 @@ export interface PhotoRecord {
   gpsSource?: 'exif' | 'device';
   /** False when the browser could not decode the image and the original was kept. */
   watermarked?: boolean;
+  /**
+   * Marks drawn over the photo to point at what is wrong. Held beside the image
+   * rather than burned into it, so the evidence stays as the camera produced it
+   * and a mark in the wrong place can be moved. See `lib/annotate.ts`.
+   */
+  annotations?: Annotation[];
   createdAt: string;
 }
 

@@ -169,6 +169,80 @@ for (let s = 1; s < chipCount; s++) {
   if (s === 1) await shot('10-section-complete');
 }
 
+// --- marking up the deficiency photo ---
+//
+// The point of the annotator is that it lands the mark in the same place on a
+// phone, in a report and on paper. So this drags a real arrow with real pointer
+// events and then reads back what was stored.
+console.log('--- photo annotation ---');
+// Back to the section holding the documented deficiency — the bare inspection
+// URL opens on Job Information, which has no photos on it.
+await page.goto(inspectionUrl, { waitUntil: 'networkidle' });
+await page.waitForTimeout(400);
+await page.locator('[data-active]').nth(1).click();
+await page.waitForTimeout(500);
+await page.locator('img[src^="blob:"]').first().click();
+await page.waitForTimeout(400);
+await page.getByRole('button', { name: /Mark up/ }).click();
+await page.waitForTimeout(400);
+
+const surface = page.locator('.touch-none').first();
+const box = await surface.boundingBox();
+check('the annotator opened over the photo', box !== null, JSON.stringify(box));
+
+// A diagonal drag across the middle of the image.
+await page.mouse.move(box.x + box.width * 0.25, box.y + box.height * 0.3);
+await page.mouse.down();
+await page.mouse.move(box.x + box.width * 0.5, box.y + box.height * 0.45, { steps: 8 });
+await page.mouse.move(box.x + box.width * 0.7, box.y + box.height * 0.6, { steps: 8 });
+await page.mouse.up();
+await page.waitForTimeout(200);
+await shot('09b-annotator');
+
+await page.getByRole('button', { name: 'Done', exact: true }).click();
+await page.waitForTimeout(500);
+// Done returns to the viewer showing the marks; close that too.
+await page.getByRole('button', { name: 'Close' }).click();
+await page.waitForTimeout(400);
+
+const marks = await page.evaluate(
+  (id) =>
+    new Promise((resolve, reject) => {
+      const open = indexedDB.open('qc2go');
+      open.onerror = () => reject(open.error);
+      open.onsuccess = () => {
+        const request = open.result
+          .transaction('photos', 'readonly')
+          .objectStore('photos')
+          .index('inspectionId')
+          .getAll(id);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => resolve(request.result?.[0]?.annotations ?? null);
+      };
+    }),
+  inspectionUrl.split('/').pop(),
+);
+
+check('the arrow was stored', Array.isArray(marks) && marks.length === 1, JSON.stringify(marks));
+check(
+  'it was stored as a fraction of the image, not as pixels',
+  marks?.[0]?.points?.every((p) => p.x >= 0 && p.x <= 1 && p.y >= 0 && p.y <= 1),
+  JSON.stringify(marks?.[0]?.points),
+);
+check(
+  'it points roughly where it was dragged',
+  Math.abs(marks?.[0]?.points?.[0]?.x - 0.25) < 0.06 &&
+    Math.abs(marks?.[0]?.points?.[1]?.x - 0.7) < 0.06,
+  JSON.stringify(marks?.[0]?.points),
+);
+
+// Put the walk back where it was. This block navigated away to reach the
+// photo, and everything after it expects to be standing on the last section,
+// which is the only step that offers the review link.
+const steps = page.locator('[data-active]');
+await steps.nth((await steps.count()) - 1).click();
+await page.waitForTimeout(400);
+
 // --- review ---
 await page.getByRole('link', { name: /Review/ }).click();
 await page.waitForURL(/\/review/);
@@ -233,6 +307,15 @@ check('deficiency note persisted', text.includes('Concord building department'))
 check('deficiency photo persisted', photoCount >= 1, photoCount);
 check('both signatures persisted', sigCount === 2, sigCount);
 await shot('15-report-after-reload', true);
+
+// The marks are drawn over the image rather than into it, so the report has to
+// render them itself — this is where they would silently vanish.
+check(
+  'the report draws the mark over the photo',
+  (await page.locator('svg path[stroke]').count()) > 0,
+  await page.locator('svg path[stroke]').count(),
+);
+
 
 /** Reads an inspection straight out of IndexedDB, past anything the UI derives. */
 async function storedInspection() {

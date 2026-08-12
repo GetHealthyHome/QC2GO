@@ -122,6 +122,52 @@ export function SectionEditor({
                 onChange={(event) => onChange({ ...section, description: event.target.value })}
               />
             </Field>
+
+            {/*
+              A repeatable section runs once per thing on the job rather than
+              once per inspection. The inspector decides how many while standing
+              in the building; the checklist only says that it repeats.
+            */}
+            <label className="flex items-start gap-2.5">
+              <input
+                type="checkbox"
+                checked={section.repeatable === true}
+                disabled={readOnly}
+                onChange={(event) =>
+                  onChange({
+                    ...section,
+                    repeatable: event.target.checked || undefined,
+                    instanceNoun: event.target.checked ? (section.instanceNoun ?? 'Head') : undefined,
+                  })
+                }
+                className="mt-0.5 size-5 shrink-0 rounded border-ink-300"
+              />
+              <span className="min-w-0">
+                <span className="block text-[14px] font-semibold text-ink-900">
+                  Runs once per item
+                </span>
+                <span className="block text-[13px] text-ink-500">
+                  For per-head, per-zone or per-room checks. Each one is answered and scored
+                  separately, so a failure names the one it belongs to.
+                </span>
+              </span>
+            </label>
+
+            {section.repeatable ? (
+              <Field
+                label="What is one of them called"
+                hint='Shown as "Add another head". Singular.'
+              >
+                <TextInput
+                  value={section.instanceNoun ?? ''}
+                  disabled={readOnly}
+                  placeholder="Head"
+                  onChange={(event) =>
+                    onChange({ ...section, instanceNoun: event.target.value || undefined })
+                  }
+                />
+              </Field>
+            ) : null}
           </div>
 
           <div className="mt-4 flex flex-col gap-2">

@@ -5,12 +5,13 @@ import {
   VISIT_TYPE_LABELS,
   formatDate,
   formatDateTime,
+  expandSections,
   getResponse,
   isScored,
   overallProgress,
   sectionProgress,
 } from '../lib/inspection';
-import type { Answer, Question, Section, SignatureRecord } from '../lib/types';
+import type { Answer, Question, SignatureRecord } from '../lib/types';
 import { PhotoViewer, usePhoto } from '../components/Photos';
 import { AnnotatedPhoto } from '../components/AnnotatedPhoto';
 import { Badge, Button, Card, Screen, TopBar, cx } from '../components/ui';
@@ -175,12 +176,13 @@ export function ReportScreen() {
           </ReportSection>
         ) : null}
 
-        {sections.map((section: Section) => {
-          const stats = sectionProgress(inspection, section);
+        {expandSections(inspection, sections).map((rendered) => {
+          const section = rendered.section;
+          const stats = sectionProgress(inspection, section, rendered.instanceId);
           return (
             <ReportSection
-              key={section.id}
-              title={section.title}
+              key={rendered.key}
+              title={rendered.title}
               meta={
                 stats.failed > 0 ? (
                   <Badge tone="fail">
@@ -194,7 +196,7 @@ export function ReportScreen() {
             >
               <ul className="flex flex-col divide-y divide-ink-100">
                 {section.questions.map((question: Question) => {
-                  const response = getResponse(inspection, question.id);
+                  const response = getResponse(inspection, question.id, rendered.instanceId);
                   if (!isScored(question)) {
                     return (
                       <li

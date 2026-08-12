@@ -106,6 +106,9 @@ const inspection = {
   // reopened, and a round trip has to produce exactly that rather than an
   // empty array. `deepStrictEqual` tells the two apart.
   reopenings: undefined,
+  // No repeatable sections on this fixture: absent has to round-trip to absent
+  // rather than to an empty object.
+  sectionInstances: undefined,
   inspectorSignature: { name: 'Sam Okafor', dataUrl: 'data:image/png;base64,AAA', signedAt: '2026-08-11T16:00:00.000Z' },
   customerSignature: { name: 'Ada Whitfield', dataUrl: 'data:image/png;base64,BBB', signedAt: '2026-08-11T16:01:00.000Z' },
   createdBy: USER,
@@ -129,6 +132,19 @@ check('a No answer keeps its explanation and its photo', () => {
   const back = m.rowToInspection(m.inspectionToRow(inspection, USER, ORG));
   assert.equal(back.responses.q1.note, 'Rim joist left open at the south wall.');
   assert.deepEqual(back.responses.q1.photoIds, ['img-1']);
+});
+
+check('section instances round trip', () => {
+  const withHeads = {
+    ...inspection,
+    sectionInstances: { heads: [{ id: 'i1', label: 'Primary bedroom' }, { id: 'i2' }] },
+    responses: { ...inspection.responses, 'h1#i2': { answer: 'no', photoIds: [] } },
+  };
+  const back = m.rowToInspection(m.inspectionToRow(withHeads, USER, ORG));
+  assert.deepEqual(back.sectionInstances, withHeads.sectionInstances);
+  // The composite answer key has to survive verbatim, or the answer detaches
+  // from the head it belongs to.
+  assert.equal(back.responses['h1#i2'].answer, 'no');
 });
 
 check('the stored result round trips', () => {

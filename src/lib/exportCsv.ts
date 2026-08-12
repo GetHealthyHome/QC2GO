@@ -11,7 +11,7 @@
  * who wants the file now.
  */
 import type { Customer, Inspection, SharedConfig, Template } from './types';
-import { getResponse, isScored, scoreOf, ANSWER_LABELS } from './inspection';
+import { expandSections, getResponse, isScored, responseKey, scoreOf, ANSWER_LABELS } from './inspection';
 import { resolveChecklist } from './checklist';
 import { punchKey } from './types';
 
@@ -88,16 +88,16 @@ export function inspectionRows(
     let failed = 0;
     let notApplicable = 0;
     let openDeficiencies = 0;
-    for (const section of checklist.sections) {
-      for (const question of section.questions) {
+    for (const rendered of expandSections(inspection, checklist.sections)) {
+      for (const question of rendered.section.questions) {
         if (!isScored(question)) continue;
-        const answer = getResponse(inspection, question.id).answer;
+        const answer = getResponse(inspection, question.id, rendered.instanceId).answer;
         if (answer === 'yes') passed += 1;
         if (answer === 'na') notApplicable += 1;
         if (answer === 'no') {
           failed += 1;
-          const resolved = customer?.punchResolutions?.[punchKey(inspection.id, question.id)];
-          if (!resolved) openDeficiencies += 1;
+          const key = punchKey(inspection.id, responseKey(question.id, rendered.instanceId));
+          if (!customer?.punchResolutions?.[key]) openDeficiencies += 1;
         }
       }
     }
@@ -133,6 +133,7 @@ const CHECKPOINT_HEADERS = [
   'Visit date',
   'Checklist',
   'Section',
+  'Instance',
   'Checkpoint',
   'Critical',
   'Answer',
@@ -168,21 +169,25 @@ export function checkpointRows(
     if (!checklist) continue;
     const customer = byId.get(inspection.customerId);
 
-    for (const section of checklist.sections) {
-      for (const question of section.questions) {
-        const response = getResponse(inspection, question.id);
+    for (const rendered of expandSections(inspection, checklist.sections)) {
+      for (const question of rendered.section.questions) {
+        const response = getResponse(inspection, question.id, rendered.instanceId);
         // Unanswered and unmeasured checkpoints are noise in a pivot: a
         // completed inspection has answered every scored question anyway, and
         // an empty measurement says nothing.
         if (!response.answer && !response.value?.trim()) continue;
 
-        const resolved = customer?.punchResolutions?.[punchKey(inspection.id, question.id)];
+        const key = punchKey(inspection.id, responseKey(question.id, rendered.instanceId));
+        const resolved = customer?.punchResolutions?.[key];
         rows.push([
           inspection.id,
           customer?.customerName ?? '',
           inspection.visitDate,
           checklist.templateName,
-          section.title,
+          rendered.section.title,
+          // Its own column rather than folded into the section name: a pivot
+          // over "which head fails most" is the reason this export exists.
+          rendered.instanceId ? rendered.title.split(' — ').slice(1).join(' — ') : '',
           question.text,
           question.critical ? 'Yes' : '',
           response.answer ? ANSWER_LABELS[response.answer] : '',

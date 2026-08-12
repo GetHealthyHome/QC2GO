@@ -129,15 +129,58 @@ await page.getByLabel('Outdoor temp (°F)').fill('38');
 await page.getByLabel('Customer present for walkthrough').selectOption('Yes');
 await shot('06-job-info-filled');
 
+/**
+ * Answer a run of dialogs in order. `page.once` will not do: several one-time
+ * listeners all fire on the *first* dialog, so the second one finds it already
+ * handled. `null` dismisses, a string accepts a prompt with that text, and
+ * `true` accepts an alert.
+ */
+async function withDialogs(answers, action) {
+  let next = 0;
+  const handler = async (dialog) => {
+    const answer = answers[next++];
+    if (answer === null || answer === undefined) await dialog.dismiss();
+    else if (answer === true) await dialog.accept();
+    else await dialog.accept(answer);
+  };
+  page.on('dialog', handler);
+  try {
+    await action();
+    await page.waitForTimeout(500);
+  } finally {
+    page.off('dialog', handler);
+  }
+}
+
 // --- walk every section ---
 const chips = page.locator('[data-active]');
 const chipCount = await chips.count();
 check('checklist has job info step plus sections', chipCount > 1, chipCount);
 
-for (let s = 1; s < chipCount; s++) {
+// The step list grows as repeatable sections gain instances, so the count is
+// re-read each time round rather than fixed before the walk starts.
+let addedHeads = 0;
+for (let s = 1; s < (await chips.count()); s++) {
   await chips.nth(s).click();
   await page.waitForTimeout(250);
   if (s === 1) await shot('07-universal-section');
+
+  // A repeatable section with nothing added yet offers a button instead of
+  // questions. Add two, so the run covers more than the single-instance case —
+  // failing the same checkpoint on two heads has to be two separate items.
+  const addFirst = page.getByRole('button', { name: /^Add head$/i });
+  if (await addFirst.count()) {
+    for (const name of ['Primary bedroom', 'Living room']) {
+      const button = page.getByRole('button', { name: /^Add (another )?head$/i }).first();
+      await withDialogs([name], () => button.click());
+      addedHeads += 1;
+    }
+    await shot('07b-heads-added');
+    // The section step has been replaced by one step per head; come back to the
+    // same index, which is now the first of them.
+    s -= 1;
+    continue;
+  }
 
   const cards = page.locator('article');
   const n = await cards.count();
@@ -170,6 +213,10 @@ for (let s = 1; s < chipCount; s++) {
   }
   if (s === 1) await shot('10-section-complete');
 }
+
+check('a repeatable section accepted two instances', addedHeads === 2, addedHeads);
+const headSteps = await page.getByRole('button', { name: /Primary bedroom|Living room/ }).count();
+check('each head became its own step', headSteps >= 2, headSteps);
 
 // --- marking up the deficiency photo ---
 //
@@ -415,29 +462,6 @@ check(
   signed?.totalDeficiencies === 1,
   signed?.totalDeficiencies,
 );
-
-/**
- * Answer a run of dialogs in order. `page.once` will not do: several one-time
- * listeners all fire on the *first* dialog, so the second one finds it already
- * handled. `null` dismisses, a string accepts a prompt with that text, and
- * `true` accepts an alert.
- */
-async function withDialogs(answers, action) {
-  let next = 0;
-  const handler = async (dialog) => {
-    const answer = answers[next++];
-    if (answer === null || answer === undefined) await dialog.dismiss();
-    else if (answer === true) await dialog.accept();
-    else await dialog.accept(answer);
-  };
-  page.on('dialog', handler);
-  try {
-    await action();
-    await page.waitForTimeout(500);
-  } finally {
-    page.off('dialog', handler);
-  }
-}
 
 // --- the punch list gathers what is still open across the whole job ---
 //

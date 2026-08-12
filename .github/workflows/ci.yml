@@ -66,6 +66,12 @@ jobs:
       - name: Check the spreadsheet export
         run: npm run check:export
 
+      # Every inspection signed before repeatable sections existed keys its
+      # answers by bare question id. If that keying moved, those records would
+      # quietly read as unanswered.
+      - name: Check repeatable sections
+        run: npm run check:sections
+
       - name: Build
         run: npm run build
 

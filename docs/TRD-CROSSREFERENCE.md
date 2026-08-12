@@ -31,7 +31,7 @@ reported. It is not yet the platform around that slice.
 
 | TRD Module | Coverage | One-line read |
 | --- | :---: | --- |
-| 1 — Template Builder & Field Types | **~40%** | Full section/checkpoint authoring with versioned snapshots; 3 question types against the TRD's 15+, and no conditional logic, repeatable sections, or formulas. |
+| 1 — Template Builder & Field Types | **~50%** | Full section/checkpoint authoring with versioned snapshots; 3 question types against the TRD's 15+, and no conditional logic, repeatable sections, or formulas. |
 | 2 — Evidence Capture & Media | **~50%** | Photos captured, downscaled, stored offline and rendered into the report. No annotation, no watermarking, no video/audio, no barcode, no AI. |
 | 3 — KYPiT Verification | **~15%** | Nothing of the risk engine exists. GPS is captured on the customer record, not on the evidence. |
 | 4 — Scoring, Workflows & Automation | **~40%** | A real scoring model with critical-failure override and hard sign-off blockers. No tasks, no punch list, no approval chain, no triage queue. |
@@ -99,7 +99,7 @@ two-layer org/team hierarchy does not yet — there is one layer, of three roles
 | — Instacount | **Gap** | — |
 | — Calculated fields (SUM/AVG/MIN/MAX) | **Gap** | Scores are computed (`scoreOf`, `src/lib/inspection.ts:257`) but there is no user-authored formula. |
 | Conditional logic (if/then, nested, score-triggered) | **Gap** | No branching of any kind. Every checkpoint on a checklist is always shown and always required. |
-| Repeatable sections (per room / per zone / per head) | **Gap** | **The most costly gap in this module for the actual business.** A ductless job with five heads runs the same section five times; today that means five near-identical checkpoints authored by hand, or one checkpoint covering all heads. |
+| Repeatable sections (per room / per zone / per head) | **Built** | A section marked repeatable runs once per instance, added on site and named by the inspector (`0012_repeatable_sections.sql`, `expandSections` in `src/lib/inspection.ts`). Each instance is answered and scored separately, so a failure names the head it belongs to. The TRD's `instance_index` has a home. |
 | AI template builder (natural language) | **Gap** | — |
 | Public template library (1,000+) | **Adapt** | Six shipped checklists (`src/templates/index.ts`), all written for this company's actual scopes, plus in-app authoring. A generic public library is the wrong target; a *shared company library* synced across devices is already effectively there via the `templates` table. |
 | Template versioning — revision log, side-by-side diff, rollback | **Partial** | This is where QC2GO is *stronger* than the TRD in one respect and weaker in another. Stronger: every inspection freezes its own `TemplateSnapshot` at start (`src/lib/checklist.ts:16`), so history is structurally immune to later edits — the TRD only promises rollback "without altering historical records", which snapshots guarantee outright. Weaker: `version` is a bare counter, there is no per-change revision log (who/when/what), no diff view, and the only rollback is "reset to shipped version". |
@@ -244,7 +244,7 @@ closer to it than the module tables suggest. Mapping what exists:
 | `inspector.device_id` | **missing** |
 | `kypit_verification.*` | **missing entirely** |
 | `sections[].section_id` / `section_title` | `snapshot.sections[]` |
-| `sections[].instance_index` | **missing** — this is the repeatable-sections gap in schema form |
+| `sections[].instance_index` | `inspections.section_instances`, with answers keyed `<questionId>#<instanceId>` |
 | `sections[].score` | computed by `sectionProgress`, not stored |
 | `fields[].field_id` / `field_type` / `value` | `responses{}` keyed by question id; `field_type` lives on the snapshot rather than the response |
 | `fields[].flagged` | **missing** as a response-level flag (`critical` is a question property) |
@@ -354,6 +354,22 @@ The two-copy shape is the interesting part, and it comes from this app working
 offline: the reason lands on the inspection so it can be written with no signal
 and read anywhere, and the server keeps its own copy when the change syncs up.
 The first is convenient; the second is the evidence.
+
+**`0012_repeatable_sections.sql` — sections that run once per thing.** The gap
+this document called the most costly in Module 1. A section can be marked
+repeatable and the inspector adds one instance per head, zone or room on the job.
+
+The decision that mattered was keying. Answers stay in the same flat map, keyed
+`<questionId>#<instanceId>` inside a repeatable section and by bare question id
+everywhere else — a composite key rather than a nested map, precisely so that
+every inspection signed before today still reads exactly as it did. A signed
+report quietly turning blank is the worst outcome available, and it is the first
+thing the new suite asserts.
+
+`expandSections` is the other half: every aggregate — progress, score, blockers,
+deficiencies, punch, export, report — iterates the expanded view rather than the
+raw sections, so they became instance-aware without each of them learning what an
+instance is.
 
 **The office export.** Two CSVs from the Completed screen: one row per
 inspection, and one row per checkpoint for pivoting on which questions fail most

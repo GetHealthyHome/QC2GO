@@ -33,6 +33,28 @@ export interface Section {
   title: string;
   description?: string;
   questions: Question[];
+  /**
+   * Run this section once per thing rather than once per inspection: per indoor
+   * head, per zone, per room. A ductless job with five heads asks the same
+   * questions five times, and the alternative — five hand-authored copies of
+   * the same section — loses which head actually failed.
+   */
+  repeatable?: boolean;
+  /** What one of them is called. "Head", "Zone", "Room". Defaults to "Item". */
+  instanceNoun?: string;
+}
+
+/**
+ * One occurrence of a repeatable section within an inspection.
+ *
+ * Instances belong to the inspection rather than to the snapshot: the checklist
+ * says a section repeats, and the inspector decides how many times while
+ * standing in the building.
+ */
+export interface SectionInstance {
+  id: string;
+  /** What the inspector called it — "Primary bedroom", "Zone 2". Optional. */
+  label?: string;
 }
 
 export type FieldType = 'text' | 'textarea' | 'date' | 'select' | 'number' | 'tel';
@@ -207,7 +229,15 @@ export interface Inspection {
   status: InspectionStatus;
   /** Values for the shared job-information fields, keyed by FieldDef id. */
   info: Record<string, string>;
+  /**
+   * Keyed by question id, or `<questionId>#<instanceId>` inside a repeatable
+   * section — see `responseKey`. A flat map rather than a nested one so that
+   * every inspection signed before repeatable sections existed still reads
+   * exactly as it did.
+   */
   responses: Record<string, Response>;
+  /** Instances of each repeatable section, keyed by section id. */
+  sectionInstances?: Record<string, SectionInstance[]>;
   summaryNotes?: string;
   inspectorSignature?: SignatureRecord;
   customerSignature?: SignatureRecord;

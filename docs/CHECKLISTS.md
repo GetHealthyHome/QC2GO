@@ -438,6 +438,8 @@ Prepended automatically to all 6 checklists, so a company-wide change is made on
 
 ### Indoor Heads
 
+*Add one for each indoor head on this job, named for where it is.*
+
 1. **Head models, capacities, and locations match the design and proposal**  
     `Critical` · `Photo for record`
 2. **Mounting plate anchored to studs or solid backing, not drywall anchors alone**  

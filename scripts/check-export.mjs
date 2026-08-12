@@ -197,30 +197,79 @@ check('a corrected deficiency is no longer counted as open', () => {
   assert.equal(row[headers.indexOf('Open deficiencies')], 0, 'q2 was corrected on the customer');
 });
 
+/**
+ * Columns by name rather than by position. The first version of these checks
+ * hardcoded indices and every one of them broke the moment a column was
+ * inserted, which said nothing about whether the export was still correct.
+ */
+function reader(rows) {
+  const headers = rows[0];
+  const at = (name) => {
+    const index = headers.indexOf(name);
+    assert.notEqual(index, -1, `the export has no "${name}" column`);
+    return index;
+  };
+  return {
+    headers,
+    cell: (row, name) => row[at(name)],
+    find: (name, value) => rows.slice(1).find((row) => row[at(name)] === value),
+    column: (name) => rows.slice(1).map((row) => row[at(name)]),
+  };
+}
+
 check('every answered checkpoint gets a row, unanswered ones do not', () => {
-  const rows = e.checkpointRows(inspections, customers, [], shared);
-  const ids = rows.slice(1).map((row) => row[5]);
-  assert.deepEqual(ids, ['Pad level', 'Permit posted', 'Line set length']);
-  assert.ok(!ids.includes('Never answered'));
+  const read = reader(e.checkpointRows(inspections, customers, [], shared));
+  const names = read.column('Checkpoint');
+  assert.deepEqual(names, ['Pad level', 'Permit posted', 'Line set length']);
+  assert.ok(!names.includes('Never answered'));
 });
 
 check('a measurement of -2 survives the round trip to a cell', () => {
-  const rows = e.checkpointRows(inspections, customers, [], shared);
-  const measurement = rows.find((row) => row[5] === 'Line set length');
-  assert.equal(measurement[8], '-2');
+  const read = reader(e.checkpointRows(inspections, customers, [], shared));
+  const measurement = read.find('Checkpoint', 'Line set length');
+  assert.equal(read.cell(measurement, 'Value'), '-2');
   // And is neutralised on the way into the file rather than left executable.
-  assert.ok(e.csvField(measurement[8]).includes('\t'));
+  assert.ok(e.csvField(read.cell(measurement, 'Value')).includes('\t'));
 });
 
 check('the checkpoint export says whether a failure was corrected', () => {
-  const rows = e.checkpointRows(inspections, customers, [], shared);
-  const failed = rows.find((row) => row[5] === 'Permit posted');
-  assert.equal(failed[6], 'Yes', 'critical flag');
-  assert.equal(failed[7], 'No', 'answer');
-  assert.equal(failed[11], 'Yes', 'corrected');
+  const read = reader(e.checkpointRows(inspections, customers, [], shared));
+  const failed = read.find('Checkpoint', 'Permit posted');
+  assert.equal(read.cell(failed, 'Critical'), 'Yes');
+  assert.equal(read.cell(failed, 'Answer'), 'No');
+  assert.equal(read.cell(failed, 'Corrected'), 'Yes');
 
-  const passed = rows.find((row) => row[5] === 'Pad level');
-  assert.equal(passed[11], '', 'a passing checkpoint has nothing to correct');
+  const passed = read.find('Checkpoint', 'Pad level');
+  assert.equal(read.cell(passed, 'Corrected'), '', 'a passing checkpoint has nothing to correct');
+});
+
+check('a repeatable section names the instance in its own column', () => {
+  const perHead = {
+    ...inspections[0],
+    id: 'insp-heads',
+    snapshot: {
+      ...snapshot,
+      sections: [
+        {
+          id: 's2',
+          title: 'Indoor heads',
+          repeatable: true,
+          instanceNoun: 'Head',
+          questions: [{ id: 'h1', text: 'Level' }],
+        },
+      ],
+    },
+    sectionInstances: { s2: [{ id: 'i1', label: 'Primary bedroom' }, { id: 'i2' }] },
+    responses: {
+      'h1#i1': { answer: 'yes', photoIds: [] },
+      'h1#i2': { answer: 'no', note: 'Sloping', photoIds: [] },
+    },
+  };
+  const read = reader(e.checkpointRows([perHead], customers, [], shared));
+  assert.deepEqual(read.column('Instance'), ['Primary bedroom', 'Head 2']);
+  // Which is the point: two rows for one checkpoint, told apart, so a pivot can
+  // ask which head fails rather than only that one did.
+  assert.deepEqual(read.column('Answer'), ['Yes', 'No']);
 });
 
 check('wording comes from the frozen snapshot, not the live checklist', () => {
@@ -231,9 +280,10 @@ check('wording comes from the frozen snapshot, not the live checklist', () => {
       { id: 's1', title: 'Outdoor unit', questions: [{ id: 'q1', text: 'REWORDED' }] },
     ] },
   ];
-  const rows = e.checkpointRows(inspections, customers, reworded, shared);
-  assert.ok(!rows.some((row) => row[5] === 'REWORDED'), 'the live wording leaked in');
-  assert.ok(rows.some((row) => row[5] === 'Pad level'));
+  const read = reader(e.checkpointRows(inspections, customers, reworded, shared));
+  const names = read.column('Checkpoint');
+  assert.ok(!names.includes('REWORDED'), 'the live wording leaked in');
+  assert.ok(names.includes('Pad level'));
 });
 
 check('the filename says what and when', () => {

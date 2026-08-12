@@ -1,6 +1,6 @@
 # Supabase backend
 
-Four migrations:
+Five migrations:
 
 - **`0001_init.sql`** — tables, roles, row-level security, the photo storage
   bucket, and an office summary view.
@@ -14,11 +14,13 @@ Four migrations:
 - **`0004_organizations.sql`** — the tenancy boundary. Companies, one company
   per account, and every policy in the database narrowed from "is this person
   signed in?" to "is this row theirs?".
+- **`0005_branding.sql`** — the company logo, so a report carries the mark of the
+  company handing it over.
 
-All four are replayed end-to-end from an empty PostgreSQL 16 database on every
+All five are replayed end-to-end from an empty PostgreSQL 16 database on every
 pull request, along with a two-company isolation suite — see
-[Proving the boundary](#proving-the-boundary). `0001` through `0003` are applied
-to the live project; `0004` applies on merge.
+[Proving the boundary](#proving-the-boundary). `0001` through `0004` are applied
+to the live project; `0005` applies on merge.
 
 ## Setting it up
 
@@ -94,6 +96,25 @@ the account is created and sees nothing.
 
 Invitations expire after 14 days, and only one can be live per address at a time
 across the whole platform, since an account belongs to one company.
+
+### Branding
+
+`organizations.logo` holds the company logo as an image data URL, and only an
+owner can set it — the same `organizations_owner_update` policy that governs the
+company name.
+
+Storing an image inline rather than in a storage bucket is a deliberate trade
+against the usual advice, for one reason: **this app prints reports in
+crawlspaces**. A bucket object needs a signed URL and a network round trip to
+render, which is exactly what is missing at the moment the report is produced.
+The organization travels with the profile at sign-in and is cached on the device,
+so a data URL is on hand offline and a bucket object is not.
+
+The cost is a fat column, bounded by check constraints at 512 KB and to
+`data:image/%`. The client downscales to the report's slot before encoding, so a
+real logo lands far under that; anything approaching the ceiling is a bug or an
+abuse. One logo per company is nothing beside the thirty-odd photos a single
+inspection carries.
 
 ### Proving the boundary
 
@@ -282,10 +303,6 @@ row and the person is created under **Authentication → Users**.
 **An owner-facing People screen.** Creating an invitation is a SQL statement
 today. It should be a form, with the pending list beside it — the policies for
 both are already in place.
-
-**Per-company branding.** `settings.companyName` is still a per-device value that
-each inspector types in, and it is what the printed report is headed with. It
-should come from `organizations.name`, with a logo beside it.
 
 **Storage cleanup for abandoned uploads.** A photo whose row upload fails after
 the file has already gone to the bucket leaves the file behind. Rare, and it

@@ -183,7 +183,7 @@ against adversarial external submitters.
 
 | TRD requirement | Status | As built |
 | --- | :---: | --- |
-| Branded PDF — logos, header/footer themes, pass/fail badges, annotated galleries | **Partial** | `ReportScreen` renders the full record — job info, summary notes, every section with pass/fail marks, deficiency explanations with photo grids, measured values, both signatures — with print styles tuned so **Print → Save as PDF** produces the customer document. Pass/fail badges are there. Missing: uploaded logo, theming, layout presets, server-side rendering. |
+| Branded PDF — logos, header/footer themes, pass/fail badges, annotated galleries | **Partial** | `ReportScreen` renders the full record — job info, summary notes, every section with pass/fail marks, deficiency explanations with photo grids, measured values, both signatures — with print styles tuned so **Print → Save as PDF** produces the customer document. Pass/fail badges are there, and as of `0005_branding.sql` so is a per-company logo in a fixed letterhead slot (`src/lib/branding.ts`), reserved so adding one never reflows the page. Missing: theming, layout presets, server-side rendering. |
 | Layout presets (Quality Audit / Executive / Client Facing / Word) | **Gap** | One layout. |
 | Custom Word `.docx` with `{{field}}` tags | **Gap** | — |
 | Excel exports (raw / pivot / summary) | **Partial** | JSON export only (`ReportScreen.exportJson`). `docs/checklists.csv` is a CSV of *checklist definitions*, not results. The Postgres view `inspection_summary` (`supabase/migrations/0002_customers.sql:97`) already flattens pass/fail counts per inspection and is one step from a real office spreadsheet. |
@@ -299,8 +299,10 @@ Ordered by value per unit of effort, with the dependency that gates each one.
 6. **Webhook on `inspection.completed`** carrying the TRD payload. Forces the
    schema mapping in §11 to be written properly, and is the hook everything
    downstream hangs off.
-7. **Server-rendered branded PDF** with a company logo, replacing browser print
-   as the customer deliverable.
+7. **Server-rendered branded PDF**, replacing browser print as the customer
+   deliverable. The company logo is already in place; what a server adds is
+   consistent pagination and a file that does not depend on the browser's print
+   dialog.
 8. **Shared read-only report link** with expiry (Module 5). The one piece of
    third-party sharing customers will actually use.
 9. **Excel/CSV export of results**, built on `inspection_summary`.
@@ -341,6 +343,20 @@ exists. What landed, and what it changed in the tables above:
   signed-in caller to any object in it.
 - A migration and isolation suite in CI that creates two companies and tries to
   cross between them.
+
+**`0005_branding.sql` — per-company letterhead.** The report was headed with a
+per-device value each inspector typed in themselves, so one crew could hand out
+reports headed three different ways. The name now comes from the organization,
+with a logo beside it in a fixed slot that is reserved whether or not one has
+been uploaded. Module 6's branded-PDF row moves from "no uploaded logo" to
+"missing theming and presets".
+
+It also turned up a bug left by `0004`: the profile — and with it the company,
+the role and now the logo — was read from the server on every start, with no
+cached copy. Opening the app offline would have shown a signed-in inspector the
+"no company" screen and an empty app, which looks exactly like losing a day's
+work. The profile is now cached on the device and the network answer replaces it
+when one arrives.
 
 Three problems it turned up on the way, each of which would have surfaced as a
 production failure rather than an error:

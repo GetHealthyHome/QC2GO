@@ -254,6 +254,12 @@ export interface Organization {
   id: string;
   name: string;
   slug: string;
+  /**
+   * The company logo as an image data URL, sized for the report letterhead.
+   * Stored inline rather than in a bucket so a report can be printed with no
+   * network — see `supabase/migrations/0005_branding.sql`.
+   */
+  logo?: string | null;
 }
 
 export interface Settings {

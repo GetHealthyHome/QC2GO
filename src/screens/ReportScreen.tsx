@@ -13,6 +13,9 @@ import {
 import type { Answer, Question, Section, SignatureRecord } from '../lib/types';
 import { PhotoViewer, usePhotoUrl } from '../components/Photos';
 import { Badge, Button, Card, Screen, TopBar, cx } from '../components/ui';
+import { Letterhead } from '../components/Letterhead';
+import { letterheadName } from '../lib/branding';
+import { useAuth } from '../lib/auth';
 import { AlertIcon, CheckIcon, MinusIcon, PenIcon, PrinterIcon, ShareIcon, XIcon } from '../components/Icons';
 
 export function ReportScreen() {
@@ -20,6 +23,7 @@ export function ReportScreen() {
   const inspection = useInspection(inspectionId);
   const customer = useCustomer(inspection?.customerId);
   const { updateInspection, settings } = useStore();
+  const { profile } = useAuth();
   const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
 
   const checklist = useChecklist(inspection);
@@ -83,12 +87,12 @@ export function ReportScreen() {
       />
 
       <Screen className="pb-10">
-        <div className="print-only mb-4">
-          <p className="text-lg font-bold">{settings.companyName || 'QC2GO — Quality in motion'}</p>
-          <p className="text-sm">
-            {checklist.templateName} — {VISIT_TYPE_LABELS[inspection.visitType]}
-          </p>
-        </div>
+        <Letterhead
+          logo={profile?.organization?.logo}
+          companyName={letterheadName(profile?.organization?.name, settings.companyName)}
+          title={`${checklist.templateName} — ${VISIT_TYPE_LABELS[inspection.visitType]}`}
+          meta={customer?.address}
+        />
 
         <Card className="p-4 print-plain">
           <div className="flex items-start justify-between gap-3">

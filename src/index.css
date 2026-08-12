@@ -122,4 +122,22 @@ button {
   .break-inside-avoid {
     break-inside: avoid;
   }
+
+  /*
+   * The dashed logo placeholder is an invitation to upload one, not part of the
+   * document. On paper the company name stands on its own — a customer-facing
+   * report with an empty dashed box in the corner reads as unfinished.
+   */
+  .no-print-border {
+    border: none !important;
+  }
+
+  /*
+   * Browsers drop backgrounds and flatten colours when printing. A logo is the
+   * one thing on this page that has to come out the colour it was given.
+   */
+  img {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
 }

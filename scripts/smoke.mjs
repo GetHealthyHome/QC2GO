@@ -154,6 +154,21 @@ await shot('12-signed');
 
 await page.getByRole('button', { name: 'Complete inspection' }).click();
 await page.waitForURL(/\/report/);
+
+// The letterhead holds a fixed area for the company logo whether or not there
+// is one, so that adding a logo never reflows the report. With no logo the slot
+// shows the company name — and it still has to occupy the same box.
+const placeholder = await page
+  .locator('div[style*="216px"]')
+  .first()
+  .boundingBox()
+  .catch(() => null);
+check(
+  'the report reserves the logo slot even with no logo',
+  placeholder !== null && Math.round(placeholder.width) === 216 && Math.round(placeholder.height) === 72,
+  placeholder ? `${Math.round(placeholder.width)}x${Math.round(placeholder.height)}` : 'no slot found',
+);
+
 await shot('13-report');
 await shot('13-report-full', true);
 

@@ -4,15 +4,37 @@ import { useChecklist, useCustomer, useInspection, useStore } from '../lib/store
 import { refreshPosition } from '../lib/geo';
 import {
   VISIT_TYPE_LABELS,
+  expandSections,
   getResponse,
+  instanceTitle,
+  instancesOf,
+  newInstanceId,
   overallProgress,
+  responseKey,
   sectionProgress,
 } from '../lib/inspection';
 import type { FieldDef, Inspection, Response, Section } from '../lib/types';
 import { QuestionCard } from '../components/QuestionCard';
 import { PhotoViewer } from '../components/Photos';
-import { Badge, Button, Field, ProgressBar, Screen, TextInput, TopBar, cx, inputClass } from '../components/ui';
-import { AlertIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon } from '../components/Icons';
+import {
+  Badge,
+  Button,
+  EmptyState,
+  Field,
+  ProgressBar,
+  Screen,
+  TextInput,
+  TopBar,
+  cx,
+  inputClass,
+} from '../components/ui';
+import {
+  AlertIcon,
+  CheckIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  PlusIcon,
+} from '../components/Icons';
 
 const INFO_STEP = 'job-info';
 
@@ -33,13 +55,39 @@ export function InspectionScreen() {
   const checklist = useChecklist(inspection);
   const sections = useMemo(() => checklist?.sections ?? [], [checklist]);
 
-  const steps = useMemo(
-    () => [
-      { id: INFO_STEP, title: 'Job Information' },
-      ...sections.map((section) => ({ id: section.id, title: section.title })),
-    ],
-    [sections],
+  // Steps are the expanded view: a repeatable section contributes one step per
+  // instance, plus a step of its own for adding the first one.
+  const rendered = useMemo(
+    () => (inspection ? expandSections(inspection, sections) : []),
+    [inspection, sections],
   );
+
+  const steps = useMemo(() => {
+    const list: Array<{ id: string; title: string; section?: Section; instanceId?: string }> = [
+      { id: INFO_STEP, title: 'Job Information' },
+    ];
+    for (const section of sections) {
+      if (!section.repeatable) {
+        list.push({ id: section.id, title: section.title, section });
+        continue;
+      }
+      const blocks = rendered.filter((entry) => entry.section.id === section.id);
+      if (blocks.length === 0) {
+        // Nothing added yet: one step that exists to say so and offer the button.
+        list.push({ id: section.id, title: section.title, section });
+        continue;
+      }
+      for (const block of blocks) {
+        list.push({
+          id: block.key,
+          title: block.title.split(' — ').slice(1).join(' — ') || block.title,
+          section,
+          instanceId: block.instanceId,
+        });
+      }
+    }
+    return list;
+  }, [sections, rendered]);
 
   const stepParam = searchParams.get('step');
   const focusQuestion = searchParams.get('focus');
@@ -48,7 +96,8 @@ export function InspectionScreen() {
     steps.findIndex((step) => step.id === stepParam),
   );
   const currentStep = steps[stepIndex] ?? steps[0];
-  const currentSection = sections.find((section) => section.id === currentStep?.id);
+  const currentSection = currentStep?.section;
+  const currentInstanceId = currentStep?.instanceId;
 
   // Jump to the top on step change, and to a specific question when deep-linked.
   useEffect(() => {
@@ -93,7 +142,8 @@ export function InspectionScreen() {
 
   function handleResponseChange(questionId: string, patch: Partial<Response>) {
     if (!inspection) return;
-    const previous = getResponse(inspection, questionId);
+    const key = responseKey(questionId, currentInstanceId);
+    const previous = getResponse(inspection, questionId, currentInstanceId);
     const next: Response = { ...previous, ...patch };
 
     // Dropping a photo from a response also drops the underlying blob.
@@ -104,8 +154,55 @@ export function InspectionScreen() {
     }
 
     updateInspection(inspection.id, {
-      responses: { ...inspection.responses, [questionId]: next },
+      responses: { ...inspection.responses, [key]: next },
     });
+  }
+
+  function addInstance(section: Section) {
+    if (!inspection) return;
+    const noun = section.instanceNoun?.trim() || 'Item';
+    const existing = instancesOf(inspection, section);
+    const label = window.prompt(
+      `Name this ${noun.toLowerCase()} — where is it?`,
+      `${noun} ${existing.length + 1}`,
+    );
+    if (label === null) return;
+
+    const instance = { id: newInstanceId(), label: label.trim() || undefined };
+    updateInspection(inspection.id, {
+      sectionInstances: {
+        ...(inspection.sectionInstances ?? {}),
+        [section.id]: [...existing, instance],
+      },
+    });
+    goToStep(`${section.id}#${instance.id}`);
+  }
+
+  function removeInstance(section: Section, instanceId: string) {
+    if (!inspection) return;
+    const existing = instancesOf(inspection, section);
+    const instance = existing.find((entry) => entry.id === instanceId);
+    const position = existing.findIndex((entry) => entry.id === instanceId) + 1;
+    const name = instance ? instanceTitle(section, instance, position) : 'this one';
+    if (!window.confirm(`Remove ${name} and everything answered on it?`)) return;
+
+    // The answers go with it. Leaving them behind would keep scoring a thing
+    // that is no longer part of the inspection.
+    const responses = { ...inspection.responses };
+    for (const question of section.questions) {
+      const key = responseKey(question.id, instanceId);
+      for (const photoId of responses[key]?.photoIds ?? []) void removePhoto(photoId);
+      delete responses[key];
+    }
+
+    updateInspection(inspection.id, {
+      responses,
+      sectionInstances: {
+        ...(inspection.sectionInstances ?? {}),
+        [section.id]: existing.filter((entry) => entry.id !== instanceId),
+      },
+    });
+    goToStep(section.id);
   }
 
   function handleInfoChange(fieldId: string, value: string) {
@@ -146,8 +243,11 @@ export function InspectionScreen() {
           <ProgressBar className="mt-1.5" value={progress.answered} total={progress.total} />
           <div ref={scrollRef} className="mt-2 flex gap-1.5 overflow-x-auto pb-2 no-scrollbar">
             {steps.map((step, index) => {
-              const section = sections.find((candidate: Section) => candidate.id === step.id);
-              const stats = section ? sectionProgress(inspection, section) : null;
+              const section = step.section;
+              const stats =
+                section && (!section.repeatable || step.instanceId)
+                  ? sectionProgress(inspection, section, step.instanceId)
+                  : null;
               const complete = stats ? stats.answered === stats.total && stats.total > 0 : false;
               return (
                 <button
@@ -193,10 +293,17 @@ export function InspectionScreen() {
         ) : currentSection ? (
           <SectionStep
             section={currentSection}
+            instanceId={currentInstanceId}
             inspection={inspection}
             focusQuestion={focusQuestion}
             onChange={handleResponseChange}
             onOpenPhoto={setViewingPhoto}
+            onAddInstance={() => addInstance(currentSection)}
+            onRemoveInstance={
+              currentInstanceId
+                ? () => removeInstance(currentSection, currentInstanceId)
+                : undefined
+            }
           />
         ) : null}
       </Screen>
@@ -298,23 +405,58 @@ function JobInfoStep({
 
 function SectionStep({
   section,
+  instanceId,
   inspection,
   focusQuestion,
   onChange,
   onOpenPhoto,
+  onAddInstance,
+  onRemoveInstance,
 }: {
   section: Section;
+  instanceId?: string;
   inspection: Inspection;
   focusQuestion: string | null;
   onChange: (questionId: string, patch: Partial<Response>) => void;
   onOpenPhoto: (photoId: string) => void;
+  onAddInstance: () => void;
+  onRemoveInstance?: () => void;
 }) {
-  const stats = sectionProgress(inspection, section);
+  const noun = section.instanceNoun?.trim() || 'Item';
+  const instances = instancesOf(inspection, section);
+
+  // A repeatable section nobody has added anything to yet. Not an error — the
+  // inspector has not got to it, or the job does not have any.
+  if (section.repeatable && !instanceId) {
+    return (
+      <>
+        <SectionHeading title={section.title} description={section.description} />
+        <EmptyState
+          icon={<PlusIcon className="size-6" />}
+          title={`No ${noun.toLowerCase()} added yet`}
+          description={`This section runs once per ${noun.toLowerCase()}. Add one for each on this job — they are scored separately, so a failure names the ${noun.toLowerCase()} it belongs to.`}
+          action={
+            <Button onClick={onAddInstance}>
+              <PlusIcon className="size-4" />
+              Add {noun.toLowerCase()}
+            </Button>
+          }
+        />
+      </>
+    );
+  }
+
+  const stats = sectionProgress(inspection, section, instanceId);
+  const position = instances.findIndex((entry) => entry.id === instanceId) + 1;
+  const instance = instances.find((entry) => entry.id === instanceId);
+
   return (
     <>
       <SectionHeading
-        title={section.title}
-        description={section.description}
+        title={
+          instance ? instanceTitle(section, instance, position) : section.title
+        }
+        description={instance ? section.title : section.description}
         meta={`${stats.answered} of ${stats.total} answered`}
       />
       <div className="flex flex-col gap-2.5">
@@ -323,6 +465,7 @@ function SectionStep({
             key={question.id}
             index={index + 1}
             question={question}
+            instanceId={instanceId}
             inspection={inspection}
             highlight={focusQuestion === question.id}
             onChange={onChange}
@@ -330,6 +473,24 @@ function SectionStep({
           />
         ))}
       </div>
+
+      {section.repeatable ? (
+        <div className="mt-4 flex flex-col gap-2">
+          <Button variant="secondary" block onClick={onAddInstance}>
+            <PlusIcon className="size-4" />
+            Add another {noun.toLowerCase()}
+          </Button>
+          {onRemoveInstance ? (
+            <button
+              type="button"
+              onClick={onRemoveInstance}
+              className="py-2 text-center text-[13px] font-semibold text-fail-600"
+            >
+              Remove this {noun.toLowerCase()}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </>
   );
 }

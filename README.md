@@ -100,6 +100,18 @@ as such — never waited on, because a photo that takes fifteen seconds to save
 while a phone hunts for a fix in a crawlspace is worse than a photo without
 coordinates.
 
+### Sections that run once per thing
+
+A section can be marked **repeatable** — per head, per zone, per room. The
+checklist says it repeats; the inspector adds one for each on the job while
+standing in the building, names it ("Primary bedroom"), and each is answered and
+scored separately. A failure then names the head it belongs to, which is the only
+thing anybody wants to know.
+
+Indoor Heads on the Mitsubishi Ductless checklist ships this way. A repeatable
+section with nothing added blocks sign-off: otherwise a five-head job could be
+signed with no heads inspected and still score 100%.
+
 ### Question types
 
 - **Yes / No / N/A** — the standard checkpoint.

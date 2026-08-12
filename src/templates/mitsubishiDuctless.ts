@@ -9,6 +9,12 @@ export const mitsubishiDuctless: Template = {
     {
       id: 'mdl-indoor',
       title: 'Indoor Heads',
+      // The section this feature was built for: a job with five heads asks
+      // these questions five times, and the answer that matters is which head
+      // failed rather than that one of them did.
+      repeatable: true,
+      instanceNoun: 'Head',
+      description: 'Add one for each indoor head on this job, named for where it is.',
       questions: [
         {
           id: 'mdl-model-match',

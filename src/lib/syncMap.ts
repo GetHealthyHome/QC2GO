@@ -31,6 +31,15 @@ function optionalText(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
+function instanceMap(value: unknown): Inspection['sectionInstances'] {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  // Absent rather than empty, so an inspection with no repeatable sections
+  // round-trips to exactly what it started as.
+  return Object.keys(value).length === 0
+    ? undefined
+    : (value as Inspection['sectionInstances']);
+}
+
 function annotationList(value: unknown): PhotoRecord['annotations'] {
   if (!Array.isArray(value) || value.length === 0) return undefined;
   return value as PhotoRecord['annotations'];
@@ -132,6 +141,7 @@ export function inspectionToRow(inspection: Inspection, userId: string, orgId: s
     status: inspection.status,
     info: inspection.info,
     responses: inspection.responses,
+    section_instances: inspection.sectionInstances ?? {},
     summary_notes: inspection.summaryNotes ?? null,
     inspector_sig: inspection.inspectorSignature ?? null,
     customer_sig: inspection.customerSignature ?? null,
@@ -161,6 +171,7 @@ export function rowToInspection(row: Row): Inspection {
     status: text(row.status) as InspectionStatus,
     info: (row.info as Record<string, string> | null) ?? {},
     responses: (row.responses as Record<string, Response> | null) ?? {},
+    sectionInstances: instanceMap(row.section_instances),
     summaryNotes: optionalText(row.summary_notes),
     inspectorSignature: (row.inspector_sig as SignatureRecord | null) ?? undefined,
     customerSignature: (row.customer_sig as SignatureRecord | null) ?? undefined,

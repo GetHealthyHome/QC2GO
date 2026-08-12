@@ -21,7 +21,7 @@ import type {
   Template,
 } from './types';
 import { punchKey } from './types';
-import { getResponse, isDeficiencyDocumented } from './inspection';
+import { expandSections, getResponse, isDeficiencyDocumented, responseKey } from './inspection';
 import { resolveChecklist } from './checklist';
 
 export interface PunchItem {
@@ -70,17 +70,20 @@ export function punchListFor(
     const checklist = resolveChecklist(inspection, templates, shared);
     if (!checklist) continue;
 
-    for (const section of checklist.sections) {
-      for (const question of section.questions) {
-        const response = getResponse(inspection, question.id);
+    for (const rendered of expandSections(inspection, checklist.sections)) {
+      for (const question of rendered.section.questions) {
+        const response = getResponse(inspection, question.id, rendered.instanceId);
         if (response.answer !== 'no') continue;
 
-        const key = punchKey(inspection.id, question.id);
+        // Keyed by the response rather than the question, so failing the same
+        // checkpoint on two different heads is two punch items and correcting
+        // one does not close the other.
+        const key = punchKey(inspection.id, responseKey(question.id, rendered.instanceId));
         const item: PunchItem = {
           inspectionId: inspection.id,
           visitDate: inspection.visitDate,
-          sectionId: section.id,
-          sectionTitle: section.title,
+          sectionId: rendered.section.id,
+          sectionTitle: rendered.title,
           question,
           response,
           critical: question.critical === true,

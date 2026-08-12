@@ -5,6 +5,7 @@ import type {
   Question,
   Response,
   Section,
+  SectionInstance,
   VisitType,
 } from './types';
 
@@ -26,8 +27,87 @@ export function isScored(question: Question): boolean {
   return (question.kind ?? 'yesno') === 'yesno';
 }
 
-export function getResponse(inspection: Inspection, questionId: string): Response {
-  return inspection.responses[questionId] ?? EMPTY_RESPONSE;
+/**
+ * Where a question's answer lives.
+ *
+ * Bare question id outside a repeatable section, and `<questionId>#<instanceId>`
+ * inside one. Composite keys rather than a nested map so that every inspection
+ * signed before repeatable sections existed still reads exactly as it did — an
+ * old record has no instances, so every key is a bare question id and nothing
+ * about it has moved.
+ */
+export function responseKey(questionId: string, instanceId?: string): string {
+  return instanceId ? `${questionId}#${instanceId}` : questionId;
+}
+
+export function getResponse(
+  inspection: Inspection,
+  questionId: string,
+  instanceId?: string,
+): Response {
+  return inspection.responses[responseKey(questionId, instanceId)] ?? EMPTY_RESPONSE;
+}
+
+/**
+ * A section as it actually appears in one inspection: once, or once per
+ * instance of a repeatable one.
+ *
+ * Every aggregate below iterates this rather than the raw sections, which is
+ * what makes them instance-aware without each of them knowing how instances
+ * work. A caller that renders sections itself should use it for the same
+ * reason.
+ */
+export interface RenderedSection {
+  section: Section;
+  /** Absent when the section is not repeatable. */
+  instanceId?: string;
+  /** "Head 2", or whatever the inspector named it. */
+  title: string;
+  /** 1-based, for the default name. */
+  position: number;
+  /** Unique per rendered block, for React keys and for step navigation. */
+  key: string;
+}
+
+/** Short and local: an instance id only has to be unique inside one inspection. */
+export function newInstanceId(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID().slice(0, 8)
+    : Math.random().toString(36).slice(2, 10);
+}
+
+export function instancesOf(inspection: Inspection, section: Section): SectionInstance[] {
+  return inspection.sectionInstances?.[section.id] ?? [];
+}
+
+export function instanceTitle(section: Section, instance: SectionInstance, position: number): string {
+  if (instance.label?.trim()) return instance.label.trim();
+  return `${section.instanceNoun?.trim() || 'Item'} ${position}`;
+}
+
+export function expandSections(
+  inspection: Inspection,
+  sections: Section[],
+): RenderedSection[] {
+  const rendered: RenderedSection[] = [];
+  for (const section of sections) {
+    if (!section.repeatable) {
+      rendered.push({ section, title: section.title, position: 1, key: section.id });
+      continue;
+    }
+    // A repeatable section with no instances yet contributes nothing to answer
+    // and nothing to score. It is a prompt to add one, which the runner shows.
+    instancesOf(inspection, section).forEach((instance, index) => {
+      rendered.push({
+        section,
+        instanceId: instance.id,
+        title: `${section.title} — ${instanceTitle(section, instance, index + 1)}`,
+        position: index + 1,
+        key: `${section.id}#${instance.id}`,
+      });
+    });
+  }
+  return rendered;
 }
 
 /** A No answer is only complete once it carries both an explanation and a photo. */
@@ -54,11 +134,15 @@ const ZERO_PROGRESS: SectionProgress = {
   incomplete: 0,
 };
 
-export function sectionProgress(inspection: Inspection, section: Section): SectionProgress {
+export function sectionProgress(
+  inspection: Inspection,
+  section: Section,
+  instanceId?: string,
+): SectionProgress {
   const scored = section.questions.filter(isScored);
   const progress: SectionProgress = { ...ZERO_PROGRESS, total: scored.length };
   for (const question of scored) {
-    const response = getResponse(inspection, question.id);
+    const response = getResponse(inspection, question.id, instanceId);
     if (!response.answer) continue;
     progress.answered += 1;
     if (response.answer === 'yes') progress.passed += 1;
@@ -72,8 +156,8 @@ export function sectionProgress(inspection: Inspection, section: Section): Secti
 }
 
 export function overallProgress(inspection: Inspection, sections: Section[]): SectionProgress {
-  return sections.reduce<SectionProgress>((totals, section) => {
-    const progress = sectionProgress(inspection, section);
+  return expandSections(inspection, sections).reduce<SectionProgress>((totals, rendered) => {
+    const progress = sectionProgress(inspection, rendered.section, rendered.instanceId);
     return {
       total: totals.total + progress.total,
       answered: totals.answered + progress.answered,
@@ -88,19 +172,25 @@ export function overallProgress(inspection: Inspection, sections: Section[]): Se
 export interface Deficiency {
   sectionId: string;
   sectionTitle: string;
+  /** Which instance of a repeatable section this came from, if any. */
+  instanceId?: string;
+  /** The step to navigate back to. */
+  stepKey: string;
   question: Question;
   response: Response;
 }
 
 export function deficiencies(inspection: Inspection, sections: Section[]): Deficiency[] {
   const found: Deficiency[] = [];
-  for (const section of sections) {
-    for (const question of section.questions) {
-      const response = getResponse(inspection, question.id);
+  for (const rendered of expandSections(inspection, sections)) {
+    for (const question of rendered.section.questions) {
+      const response = getResponse(inspection, question.id, rendered.instanceId);
       if (response.answer === 'no') {
         found.push({
-          sectionId: section.id,
-          sectionTitle: section.title,
+          sectionId: rendered.section.id,
+          sectionTitle: rendered.title,
+          instanceId: rendered.instanceId,
+          stepKey: rendered.key,
           question,
           response,
         });
@@ -113,12 +203,19 @@ export function deficiencies(inspection: Inspection, sections: Section[]): Defic
 /** Pass items marked as needing an evidence photo that do not have one. Advisory, not blocking. */
 export function missingEvidencePhotos(inspection: Inspection, sections: Section[]): Deficiency[] {
   const found: Deficiency[] = [];
-  for (const section of sections) {
-    for (const question of section.questions) {
+  for (const rendered of expandSections(inspection, sections)) {
+    for (const question of rendered.section.questions) {
       if (!question.photoOnPass) continue;
-      const response = getResponse(inspection, question.id);
+      const response = getResponse(inspection, question.id, rendered.instanceId);
       if (response.answer === 'yes' && response.photoIds.length === 0) {
-        found.push({ sectionId: section.id, sectionTitle: section.title, question, response });
+        found.push({
+          sectionId: rendered.section.id,
+          sectionTitle: rendered.title,
+          instanceId: rendered.instanceId,
+          stepKey: rendered.key,
+          question,
+          response,
+        });
       }
     }
   }
@@ -132,6 +229,9 @@ export interface Blocker {
   label: string;
   sectionId?: string;
   questionId?: string;
+  instanceId?: string;
+  /** The step this blocker sits in, so review can link straight back to it. */
+  stepKey?: string;
 }
 
 /**
@@ -152,16 +252,33 @@ export function completionBlockers(
     }
   }
 
+  // A repeatable section with no instances at all is a section nobody has said
+  // anything about. On a five-head job that is five sets of answers missing, so
+  // it blocks sign-off in its own right rather than passing silently.
   for (const section of sections) {
+    if (section.repeatable && instancesOf(inspection, section).length === 0) {
+      blockers.push({
+        kind: 'info',
+        label: `${section.title}: add at least one ${(section.instanceNoun || 'item').toLowerCase()}`,
+        sectionId: section.id,
+      });
+    }
+  }
+
+  for (const rendered of expandSections(inspection, sections)) {
+    const { section, instanceId, key: stepKey } = rendered;
     for (const question of section.questions) {
       if (!isScored(question)) continue;
-      const response = getResponse(inspection, question.id);
+      const response = getResponse(inspection, question.id, instanceId);
+      const where = section.repeatable ? ` (${rendered.title})` : '';
       if (!response.answer) {
         blockers.push({
           kind: 'unanswered',
-          label: question.text,
+          label: `${question.text}${where}`,
           sectionId: section.id,
           questionId: question.id,
+          instanceId,
+          stepKey,
         });
         continue;
       }
@@ -169,17 +286,21 @@ export function completionBlockers(
         if (!response.note?.trim()) {
           blockers.push({
             kind: 'explanation',
-            label: `Explanation required: ${question.text}`,
+            label: `Explanation required: ${question.text}${where}`,
             sectionId: section.id,
             questionId: question.id,
+            instanceId,
+            stepKey,
           });
         }
         if (response.photoIds.length === 0) {
           blockers.push({
             kind: 'photo',
-            label: `Photo required: ${question.text}`,
+            label: `Photo required: ${question.text}${where}`,
             sectionId: section.id,
             questionId: question.id,
+            instanceId,
+            stepKey,
           });
         }
       }
@@ -258,10 +379,10 @@ export function scoreOf(inspection: Inspection, sections: Section[]): Score {
   let passed = 0;
   let failed = 0;
   let criticalFailures = 0;
-  for (const section of sections) {
-    for (const question of section.questions) {
+  for (const rendered of expandSections(inspection, sections)) {
+    for (const question of rendered.section.questions) {
       if (!isScored(question)) continue;
-      const answer = getResponse(inspection, question.id).answer;
+      const answer = getResponse(inspection, question.id, rendered.instanceId).answer;
       if (answer === 'yes') passed += 1;
       if (answer === 'no') {
         failed += 1;

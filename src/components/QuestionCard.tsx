@@ -38,6 +38,7 @@ const ANSWER_BUTTONS: Array<{
 export function QuestionCard({
   index,
   question,
+  instanceId,
   inspection,
   readOnly,
   highlight,
@@ -46,13 +47,15 @@ export function QuestionCard({
 }: {
   index: number;
   question: Question;
+  /** Which instance of a repeatable section this card belongs to, if any. */
+  instanceId?: string;
   inspection: Inspection;
   readOnly?: boolean;
   highlight?: boolean;
   onChange: (questionId: string, patch: Partial<Response>) => void;
   onOpenPhoto: (photoId: string) => void;
 }) {
-  const response = getResponse(inspection, question.id);
+  const response = getResponse(inspection, question.id, instanceId);
   const [showOptional, setShowOptional] = useState(false);
 
   if (!isScored(question)) {

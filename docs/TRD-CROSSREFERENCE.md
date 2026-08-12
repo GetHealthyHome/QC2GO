@@ -33,7 +33,7 @@ reported. It is not yet the platform around that slice.
 | --- | :---: | --- |
 | 1 — Template Builder & Field Types | **~65%** | Full section/checkpoint authoring with versioned snapshots, repeatable sections, and one level of conditional logic. Still 3 question types against the TRD's 15+, and no formulas. |
 | 2 — Evidence Capture & Media | **~65%** | Photos captured, downscaled, stored offline and rendered into the report; marks drawn beside the image rather than burned into it; time, coordinates and inspector burned into the pixels; barcode capture into serial-number checkpoints on devices with a decoder. No video/audio, no Instacount, no AI, and no crop or rotate. |
-| 3 — KYPiT Verification | **~15%** | Nothing of the risk engine exists. GPS is captured on the customer record, not on the evidence. |
+| 3 — KYPiT Verification | **~35%** | The two signals that pay off against your own crews are built: completion velocity against an inspector's own pace, and photo coordinates against the job's. The rest of the risk engine — carrier lookup, WHOIS, VPN detection, image forensics — defends a door QC2GO does not have. |
 | 4 — Scoring, Workflows & Automation | **~40%** | A real scoring model with critical-failure override and hard sign-off blockers. No tasks, no punch list, no approval chain, no triage queue. |
 | 5 — Teams, Security & Access | **~70%** | Supabase auth, per-company tenancy with three roles, row-level security proven by an isolation suite, invitation-based onboarding, tombstoned deletes, and expiring read-only report links for people outside the company. No second (team) role layer, no SSO, and an audit ledger that records one action rather than all of them. |
 | 6 — Reports, Exports & Integrations | **~40%** | Print-to-PDF report and JSON export; a Postgres summary view for the office. No branded layout engine, no .docx/.xlsx, no webhooks, no cloud sync. |
@@ -128,20 +128,29 @@ two-layer org/team hierarchy does not yet — there is one layer, of three roles
 
 | TRD signal | Status | Note |
 | --- | :---: | --- |
-| Image signal — EXIF vs system time, geofence, AI-generation check | **Gap** | See the EXIF-stripping problem above. Geofencing is *nearly* reachable: `Customer.location` and `distanceMiles` already exist (`src/lib/geo.ts:50`), so "was this photo taken within N metres of the job?" is a small step once photos carry their own coordinates. |
+| Image signal — EXIF vs system time, geofence, AI-generation check | **Partial** | Geofencing is built (`src/lib/integrity.ts`): photos carry their own coordinates and are measured against the job's, flagged past a quarter-mile. The radius is deliberately generous — a fix taken in a basement is routinely a few hundred metres out, and a flag that fires on ordinary GPS error is one people learn to ignore. EXIF time is captured (`0009`) but not yet compared against the system clock. No AI-generation check. |
 | User identity — carrier, email domain, behaviour profile | **Gap** | — |
 | Domain analytics — WHOIS, MX, reputation | **Adapt** | Written for a platform accepting submissions from unknown contractors. QC2GO accounts are created by an administrator in the Supabase dashboard with no self-signup — the threat this defends against does not exist here. Skip unless the app is opened to subcontractors. |
-| Activity analytics — completion velocity, step sequencing, reversions | **Gap** | The data to compute it is already stored: `Response.answeredAt`, `createdAt`, `completedAt`. Pencil-whipping detection ("60 checkpoints answered in 90 seconds") is the cheapest genuinely useful KYPiT signal available and needs no new capture at all. |
+| Activity analytics — completion velocity, step sequencing, reversions | **Partial** | Velocity is built. Median gap between consecutive answers, compared against that inspector's own history — with an absolute floor underneath, because an inspector who has always pencil-whipped has a fast baseline and a pure ratio would clear them forever. Step sequencing and reversions are not built. |
 | IP analytics — ISP, VPN/Tor, mock location | **Gap** | — |
 | Risk score + flag routing to a review queue | **Gap** | — |
 | Immutable record after sign-off | **Partial** | A completed inspection is read-only in the app (`src/screens/InspectionScreen.tsx:78`) and the server refuses edits to a completed record except by an admin (`inspections_update_own_open` policy). But "Reopen for editing" (`src/screens/ReportScreen.tsx:59`) takes **no rationale**, and nothing is written to an audit ledger. The TRD requires both. This is a small, high-integrity fix. |
 
-**Honest read:** Module 3 is the least-started module and the one where the
-inspiration doc most exceeds current need. Two pieces of it — velocity analysis
-and photo geofencing — are cheap, genuinely useful for a company running its own
-crews, and worth doing early. The rest (carrier lookup, WHOIS, VPN detection,
-generative-AI image forensics) are third-party-vendor purchases that only pay off
-against adversarial external submitters.
+**Honest read:** the two pieces worth having are now built, and the rest is
+still not worth buying. Velocity and geofencing cost one pure module over data
+the app already stored. Carrier lookup, WHOIS, VPN detection and generative-AI
+image forensics are third-party-vendor purchases that only pay off against
+adversarial *external* submitters, and QC2GO accounts are created by invitation
+with no self-signup.
+
+The design constraint that mattered was credibility rather than coverage. A
+fraud flag is only worth having if a supervisor still reads it in six months, and
+every false positive spends that down — so most of `check:integrity` is about
+what must *not* fire: a three-question re-check, a record left open overnight, a
+walk interrupted by lunch, a fix taken in a basement, an inspector who is simply
+quick. Nothing is stored on the inspection either; flags are derived on read, so
+a threshold can be improved without rewriting signed records and a heuristic that
+turns out to be wrong has not stamped a permanent accusation onto a QC document.
 
 ---
 
@@ -386,6 +395,39 @@ It also turned up a real bug in the existing JSON export: the download anchor wa
 never attached to the document, which works in some browsers and is silently
 ignored in others — no file, no error, nothing to report. Both exports now share
 one helper that appends, clicks and cleans up.
+
+**Pencil-whipping checks.** Roadmap item 12, and the two pieces of Module 3 worth
+building for a company running its own crews. A 60-checkpoint inspection answered
+in ninety seconds was not walked; a photograph taken twelve miles from the job is
+not evidence of the job. Both were computable from data already on the device.
+
+**Median gap between answers, not elapsed time.** An inspection left open on a
+phone overnight has an enormous duration and says nothing, and a walk interrupted
+by lunch has one huge gap that would drag a mean upward and hide exactly the
+pattern being looked for. A median does not notice the interruption at all.
+
+**Compared against the inspector's own pace — with a floor underneath.** Crews
+differ and scopes differ, so a company-wide average would flag the fast people
+every week. But a ratio alone has a hole: an inspector who has *always*
+pencil-whipped has a fast baseline, and comparing them to themselves clears them
+forever. The threshold is the larger of the two, so somebody whose normal is a
+minute per checkpoint is flagged at twenty seconds, somebody genuinely quick is
+not flagged for being quick, and nobody is cleared by their own bad history.
+
+**The design constraint was credibility, not coverage.** A fraud flag is only
+worth having if a supervisor still reads it in six months, and every false
+positive spends that down. So most of `check:integrity` is about what must *not*
+fire: a three-question re-check, a record left open overnight, a walk interrupted
+by lunch, a fix taken in a basement, a photo with no coordinates, a customer
+whose location was never captured, an inspection signed before `answeredAt`
+existed. The geofence radius is a generous quarter-mile for the same reason.
+
+**Nothing is written to the inspection.** Flags are derived on read, so a
+threshold can be improved without rewriting a single signed record — and a
+heuristic that turns out to be wrong has not stamped a permanent accusation onto
+a QC document. They are also admin-only and never printed: telling the person
+being measured where the line sits is how you teach them to pace just above it,
+and a supervisor's prompt has no business on the copy handed to a customer.
 
 **Conditional logic — asking only what applies.** Roadmap item 10. A section or
 a checkpoint can now carry `showIf`, naming an earlier checkpoint and the answers

@@ -106,6 +106,14 @@ interface StoreValue {
   addPhoto: (inspectionId: string, questionId: string, file: File) => Promise<string>;
   removePhoto: (id: string) => Promise<void>;
   getPhoto: (id: string) => Promise<PhotoRecord | undefined>;
+  /**
+   * Every photo record on one inspection, for reading what is attached to them
+   * rather than for drawing them — where they were taken, when the shutter
+   * fired. Deliberately not a hook over the whole history: these records carry
+   * the image bytes, and pulling a month of them into memory to read a pair of
+   * coordinates is a bad trade.
+   */
+  getInspectionPhotos: (inspectionId: string) => Promise<PhotoRecord[]>;
   /** Replace the marks drawn on a photo. The image bytes are never touched. */
   savePhotoAnnotations: (id: string, annotations: Annotation[]) => Promise<void>;
   saveSettings: (next: Settings) => Promise<void>;
@@ -439,6 +447,11 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     return fetchPhotoBlob(photo);
   }, []);
 
+  const getInspectionPhotos = useCallback<StoreValue['getInspectionPhotos']>(
+    (inspectionId) => photosRepo.byInspection(inspectionId),
+    [],
+  );
+
   const savePhotoAnnotations = useCallback<StoreValue['savePhotoAnnotations']>(
     async (id, annotations) => {
       const photo = await photosRepo.get(id);
@@ -563,6 +576,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addPhoto,
       removePhoto,
       getPhoto,
+      getInspectionPhotos,
       savePhotoAnnotations,
       saveSettings,
       saveTemplate,
@@ -592,6 +606,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       addPhoto,
       removePhoto,
       getPhoto,
+      getInspectionPhotos,
       savePhotoAnnotations,
       saveSettings,
       saveTemplate,

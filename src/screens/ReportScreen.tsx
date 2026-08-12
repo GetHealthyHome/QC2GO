@@ -19,6 +19,7 @@ import { Letterhead } from '../components/Letterhead';
 import { letterheadName } from '../lib/branding';
 import { downloadFile } from '../lib/exportCsv';
 import { useAuth } from '../lib/auth';
+import { ShareLinks } from '../components/ShareLinks';
 import { AlertIcon, CheckIcon, MinusIcon, PenIcon, PrinterIcon, ShareIcon, XIcon } from '../components/Icons';
 
 export function ReportScreen() {
@@ -26,7 +27,8 @@ export function ReportScreen() {
   const inspection = useInspection(inspectionId);
   const customer = useCustomer(inspection?.customerId);
   const { updateInspection, settings } = useStore();
-  const { profile } = useAuth();
+  const auth = useAuth();
+  const profile = auth.profile;
   const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
 
   const checklist = useChecklist(inspection);
@@ -274,6 +276,14 @@ export function ReportScreen() {
             <SignatureBlock label="Customer" record={inspection.customerSignature} />
           </div>
         </ReportSection>
+
+        {/*
+          * Sharing needs a server to hand the link to, so it only appears on a
+          * deployment that has one — and only once the report is signed, because
+          * a link to a half-walked inspection is a promise about a job that is
+          * not finished.
+          */}
+        {completed && auth.enabled ? <ShareLinks inspectionId={inspection.id} /> : null}
 
         <div className="mt-6 flex flex-col gap-2 no-print">
           <Button variant="secondary" block onClick={() => window.print()}>

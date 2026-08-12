@@ -72,6 +72,13 @@ jobs:
       - name: Check repeatable sections
         run: npm run check:sections
 
+      # A share link is a bearer credential handed to somebody with no account,
+      # and the function serving it runs with the service key — so row-level
+      # security is not underneath it. Every reason to refuse, and every field a
+      # reader is allowed to see, is decided in one pure module and asserted here.
+      - name: Check who may read a shared report
+        run: npm run check:share-access
+
       - name: Build
         run: npm run build
 

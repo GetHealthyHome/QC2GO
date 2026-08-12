@@ -607,6 +607,109 @@ check('one company cannot read another\'s endpoints or deliveries', () => {
   return deliveries.includes('insp-hook') ? 'Beta can read Acme\'s deliveries' : null;
 });
 
+// ---------------------------------------------------------------------------
+// Share links
+//
+// A row in `report_shares` is a bearer credential: whoever holds the token can
+// read the report without an account. That makes this table the one place where
+// a policy mistake does not leak data to another company's staff — it leaks a
+// key that anybody at all can use. Worth attacking directly.
+// ---------------------------------------------------------------------------
+
+check('a share is stamped with the company that made it', () => {
+  tx(
+    ACME,
+    `insert into public.report_shares (inspection_id, token_hash, expires_at, created_by, recipient)
+     values ('insp-acme', 'hash-acme-1', now() + interval '7 days', '${ACME}', 'homeowner@example.test');`,
+  );
+  const org = psql(`select org_id from public.report_shares where token_hash = 'hash-acme-1';`);
+  return org === 'aaaaaaaa-0000-0000-0000-000000000001' ? null : `org_id came out as ${org}`;
+});
+
+check('THE ONE THAT MATTERS: one company cannot read another\'s share tokens', () => {
+  // Even hashed, this list says which reports are live on the internet and to
+  // whom they were sent. Reading it across a company boundary is a breach on
+  // its own, before anybody tries to use a token.
+  const rows = tx(BETA, `select token_hash, coalesce(recipient, '') from public.report_shares;`);
+  if (rows.includes('hash-acme-1')) return 'Beta can read Acme\'s share tokens';
+  return rows.includes('homeowner@example.test') ? 'Beta can read who Acme shared with' : null;
+});
+
+check('a share cannot be created in another company\'s name', () => {
+  const forged = tx(
+    BETA,
+    `insert into public.report_shares (org_id, inspection_id, token_hash, expires_at, created_by)
+     values ('aaaaaaaa-0000-0000-0000-000000000001', 'insp-acme', 'hash-forged',
+             now() + interval '7 days', '${BETA}');`,
+    { expectError: true },
+  );
+  return forged?.error ? null : 'Beta published a link to an Acme report';
+});
+
+check('a share cannot be attributed to somebody else', () => {
+  // Who published a link is the first question asked after one turns up
+  // somewhere it should not have.
+  const misattributed = tx(
+    ACME_ADMIN,
+    `insert into public.report_shares (inspection_id, token_hash, expires_at, created_by)
+     values ('insp-acme', 'hash-misattributed', now() + interval '7 days', '${ACME}');`,
+    { expectError: true },
+  );
+  return misattributed?.error ? null : 'a share was filed under another account\'s name';
+});
+
+check('one company cannot revoke another\'s link', () => {
+  tx(BETA, `update public.report_shares set revoked_at = now() where token_hash = 'hash-acme-1';`);
+  const revoked = psql(
+    `select coalesce(revoked_at::text, 'live') from public.report_shares where token_hash = 'hash-acme-1';`,
+  );
+  return revoked === 'live' ? null : 'Beta took down an Acme report';
+});
+
+check('anybody in the company can revoke, not only an owner', () => {
+  // A link sent to the wrong address is an emergency. Making somebody find an
+  // owner first is how it stays live for another hour.
+  tx(ACME_ADMIN, `update public.report_shares set revoked_at = now() where token_hash = 'hash-acme-1';`);
+  const revoked = psql(
+    `select coalesce(revoked_at::text, 'live') from public.report_shares where token_hash = 'hash-acme-1';`,
+  );
+  return revoked === 'live' ? 'an admin could not revoke a link' : null;
+});
+
+check('a link that never expires cannot be created', () => {
+  // A share with no end date is a report published to the internet by accident,
+  // and nobody goes back to check.
+  const forever = psql(
+    `insert into public.report_shares (org_id, inspection_id, token_hash, expires_at, created_by)
+     values ('aaaaaaaa-0000-0000-0000-000000000001', 'insp-acme', 'hash-forever',
+             now() - interval '1 day', '${ACME}');`,
+    { expectError: true },
+  );
+  if (!forever?.error) return 'a link was created already expired';
+
+  const missing = psql(
+    `insert into public.report_shares (org_id, inspection_id, token_hash, created_by)
+     values ('aaaaaaaa-0000-0000-0000-000000000001', 'insp-acme', 'hash-null', '${ACME}');`,
+    { expectError: true },
+  );
+  return missing?.error ? null : 'a link was created with no expiry at all';
+});
+
+check('deleting an inspection takes its links down with it', () => {
+  // Otherwise a record deleted on request stays readable to anybody holding an
+  // old link, which is the opposite of what deleting it meant.
+  psql(`
+    insert into public.inspections (id, org_id, customer_id, snapshot, visit_type, created_by)
+    values ('insp-doomed', 'aaaaaaaa-0000-0000-0000-000000000001', 'cust-acme', '{}',
+            'site-visit', '${ACME}');
+    insert into public.report_shares (org_id, inspection_id, token_hash, expires_at, created_by)
+    values ('aaaaaaaa-0000-0000-0000-000000000001', 'insp-doomed', 'hash-doomed',
+            now() + interval '7 days', '${ACME}');
+    delete from public.inspections where id = 'insp-doomed';`);
+  const left = psql(`select count(*) from public.report_shares where token_hash = 'hash-doomed';`);
+  return left === '0' ? null : `${left} link(s) outlived the record`;
+});
+
 check('an owner can set their own company logo', () => {
   tx(ACME, `update public.organizations set logo = 'data:image/png;base64,AAAA'
              where id = 'aaaaaaaa-0000-0000-0000-000000000001';`);

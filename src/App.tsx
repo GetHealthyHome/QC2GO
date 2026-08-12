@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useStore } from './lib/store';
 import { useAuth } from './lib/auth';
 import { SignInScreen } from './screens/SignInScreen';
@@ -7,6 +7,7 @@ import { SetPasswordScreen } from './screens/SetPasswordScreen';
 import { PeopleScreen } from './screens/PeopleScreen';
 import { PunchListScreen } from './screens/PunchListScreen';
 import { IntegrationsScreen } from './screens/IntegrationsScreen';
+import { SharedReportScreen } from './screens/SharedReportScreen';
 import { HomeScreen } from './screens/HomeScreen';
 import { CustomerFormScreen } from './screens/CustomerFormScreen';
 import { CustomerScreen } from './screens/CustomerScreen';
@@ -25,6 +26,36 @@ import { LocalModeBanner } from './components/LocalModeBanner';
 export default function App() {
   const { ready } = useStore();
   const auth = useAuth();
+  /*
+   * The router's location, not `window.location.hash`.
+   *
+   * Both say the same thing, but only one of them makes this component
+   * re-render when it changes. Moving between two hashes of the same document
+   * is not a page load, so a component that reads the address bar directly goes
+   * on showing whatever it decided the first time — which meant following a
+   * share link from an already-open tab kept showing the sign-in screen.
+   */
+  const location = useLocation();
+
+  /*
+   * A shared report is the one thing in QC2GO reachable without an account, and
+   * it is settled before anything else — before the sign-in gate, because a
+   * recipient has no account and never will, and before the loading screen,
+   * because this screen reads nothing out of the local database.
+   *
+   * The exemption is this route and nothing else. What it shows is decided
+   * entirely by the server: the token is the whole credential, the function on
+   * the other end checks expiry, revocation and passcode, and it returns an
+   * allow-listed subset of the record. There is no store, no sync and no
+   * session behind this screen for a bad token to reach.
+   */
+  if (location.pathname.startsWith('/shared/')) {
+    return (
+      <Routes>
+        <Route path="/shared/:token" element={<SharedReportScreen />} />
+      </Routes>
+    );
+  }
 
   if (!ready || !auth.ready) {
     return (
@@ -37,7 +68,7 @@ export default function App() {
     );
   }
 
-  // With a backend configured, nothing is reachable without an account.
+  // With a backend configured, nothing else is reachable without an account.
   if (auth.enabled && !auth.session) {
     return <SignInScreen />;
   }

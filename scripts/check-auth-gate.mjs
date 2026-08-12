@@ -63,6 +63,52 @@ check(
   JSON.stringify(integrations.slice(0, 90)),
 );
 
+/*
+ * The shared-report route is the one exemption from the sign-in gate, so it is
+ * the one worth testing hardest. Three things have to be true: an invented token
+ * discloses nothing, the screen says so rather than failing blankly, and the
+ * exemption does not extend one character further than the route it was written
+ * for.
+ *
+ * Note what this arrives from: the gated /integrations screen, above. Moving
+ * between two hashes of the same document is not a page load, so this only
+ * works if the app re-reads the route when it changes rather than when it
+ * mounts. It did not, once — a recipient with the app already open in that tab
+ * got the sign-in screen and no way past it.
+ */
+const SHARE_URL =
+  BASE + '/#/shared/0000000000000000000000000000000000000000000000000000000000000000';
+
+await p.goto(SHARE_URL, { waitUntil: 'networkidle' });
+await p.waitForTimeout(1500);
+const shared = await p.locator('body').innerText();
+check(
+  'an invented share token discloses nothing',
+  !shared.includes('New customer') && !shared.includes('Signing secret') && !/Sign in/.test(shared),
+  JSON.stringify(shared.slice(0, 120)),
+);
+check(
+  'and says so rather than failing blankly',
+  /cannot be opened|not valid|could not/i.test(shared),
+  JSON.stringify(shared.slice(0, 120)),
+);
+
+// And again as a cold open, which is how a recipient actually arrives.
+await p.reload({ waitUntil: 'networkidle' });
+await p.waitForTimeout(1500);
+const cold = await p.locator('body').innerText();
+check(
+  'a share link opened cold behaves the same way',
+  !/Sign in/.test(cold) && /cannot be opened|not valid|could not/i.test(cold),
+  JSON.stringify(cold.slice(0, 120)),
+);
+
+// A path that merely starts the same way must not inherit the exemption.
+await p.goto(BASE + '/#/shared', { waitUntil: 'networkidle' });
+await p.waitForTimeout(1000);
+const bare = await p.locator('body').innerText();
+check('the exemption does not extend past its own route', bare.includes('Sign in'), JSON.stringify(bare.slice(0, 90)));
+
 await p.getByLabel('Email').fill('nobody@example.com');
 await p.getByLabel('Password').fill('wrong-password');
 await p.getByRole('button', { name: 'Sign in' }).click();

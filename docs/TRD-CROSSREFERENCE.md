@@ -35,7 +35,7 @@ reported. It is not yet the platform around that slice.
 | 2 — Evidence Capture & Media | **~50%** | Photos captured, downscaled, stored offline and rendered into the report. No annotation, no watermarking, no video/audio, no barcode, no AI. |
 | 3 — KYPiT Verification | **~15%** | Nothing of the risk engine exists. GPS is captured on the customer record, not on the evidence. |
 | 4 — Scoring, Workflows & Automation | **~40%** | A real scoring model with critical-failure override and hard sign-off blockers. No tasks, no punch list, no approval chain, no triage queue. |
-| 5 — Teams, Security & Access | **~60%** | Supabase auth, per-company tenancy with three roles, row-level security proven by an isolation suite, invitation-based onboarding, tombstoned deletes. No second (team) role layer, no external sharing, no SSO, no audit ledger. |
+| 5 — Teams, Security & Access | **~70%** | Supabase auth, per-company tenancy with three roles, row-level security proven by an isolation suite, invitation-based onboarding, tombstoned deletes, and expiring read-only report links for people outside the company. No second (team) role layer, no SSO, and an audit ledger that records one action rather than all of them. |
 | 6 — Reports, Exports & Integrations | **~40%** | Print-to-PDF report and JSON export; a Postgres summary view for the office. No branded layout engine, no .docx/.xlsx, no webhooks, no cloud sync. |
 
 The overall shape of the gap is consistent: **QC2GO has the record, and does not
@@ -170,7 +170,7 @@ against adversarial external submitters.
 | Org roles: Owner / Super Admin / Admin / Member | **Partial** | Three of the four: `owner`, `admin`, `inspector`. Owner manages members and the company; admin authors checklists and amends signed records. Super Admin has no equivalent and no current need. |
 | Team roles: Team Admin / Contributor / Focused Access / Viewer | **Gap** | There is one role layer, not two. Teams inside a company are not modelled. |
 | Provisioning and onboarding | **Built** | A company is created deliberately in SQL; from there its owner invites staff from Settings → People. The `invite-user` Edge Function sends the email, and the signup trigger binds the new account to that company with that role. No invitation means no company. |
-| Third-party sharing — Assignee / Collaborator / Viewer, secure link over email/SMS, expiry, passcode | **Gap** | Nothing leaves the app except a printed PDF or a JSON file. A read-only expiring link to a finished report is the obvious first piece and the one a customer would actually use. |
+| Third-party sharing — Assignee / Collaborator / Viewer, secure link over email/SMS, expiry, passcode | **Partial** | The Viewer tier is built (`0013_report_shares.sql`): a read-only link to a signed report, openable with no account, 30-day expiry, optional passcode, revocable by anybody in the company, with a view count. Tokens are stored hashed, so the link is shown once and cannot be recovered. Assignee and Collaborator are not built — they imply outside accounts writing into a company's records, which is a different product. QC2GO does not send the link; the sender pastes it wherever they already talk to the customer. |
 | SSO — SAML 2.0 / OIDC, OTP, OAuth | **Partial** | Supabase email + password, admin-provisioned, no self-signup. Supabase supports OAuth and OTP with configuration; SAML needs a paid tier. |
 | SOC 2 Type II, annual pen testing | **Gap** | Organizational, not code. |
 | Field-level immutable audit log (who, what, when, old, new) | **Partial** | `audit_log` (`0006`) exists and is genuinely append-only, but it records one action: a signed inspection being unlocked. Deletes leave tombstones (`0003`). Ordinary updates still overwrite in place with no history — the table is now there to extend rather than to build. |
@@ -199,8 +199,8 @@ against adversarial external submitters.
 | --- | :---: | --- |
 | 1 — Template Builder Web Canvas | **Partial** | `ChecklistEditorScreen` covers the centre canvas. No left field palette (there are only three question kinds to drag) and no right inspector panel (properties are inline). Both arrive naturally with more field types. |
 | 2 — Mobile Field Inspection | **Built** | The closest match in the app. Offline badge (`OfflineBanner`), progress metrics, one-tap Yes/No/N-A tiles, inline Add Photo, sticky bottom bar. Missing from the TRD's bar: flag navigation and voice dictation. |
-| 3 — Mobile Evidence & Camera Annotator | **Gap** | No annotator, no GPS/timestamp overlay, no capture-mode toggle. `PhotoViewer` is view-only. |
-| 4 — Report Generation & Layout Engine | **Partial** | Report preview and download exist; no preset switcher, no share, no email. |
+| 3 — Mobile Evidence & Camera Annotator | **Partial** | Built since this table was first written: `0010` added arrow, box, circle, freehand and text marks in normalised coordinates, and `0009` burns the time, coordinates and inspector into the pixels. Still missing: a capture-mode toggle, and the TRD's blur and measurement tools. |
+| 4 — Report Generation & Layout Engine | **Partial** | Report preview, download and a read-only share link exist; no preset switcher and no email — QC2GO produces the link, the sender delivers it. |
 | 5 — Mobile AI Walkthrough & Session Summary | **Gap** | — |
 | 6 — Tasks, Punch Lists & Work Order Center | **Gap** | `CompletedScreen` is the nearest thing — a searchable history of finished inspections — but it is a record, not a queue. |
 
@@ -386,6 +386,54 @@ It also turned up a real bug in the existing JSON export: the download anchor wa
 never attached to the document, which works in some browsers and is silently
 ignored in others — no file, no error, nothing to report. Both exports now share
 one helper that appends, clicks and cleans up.
+
+**`0013_report_shares.sql` — a link you can send a homeowner.** Roadmap item 8.
+Until now a finished report left the app as a printed PDF or a JSON file; there
+was no way to send one. A signed report now produces a link that opens with no
+account, lasts 30 days, takes an optional passcode, and can be revoked by anybody
+in the company.
+
+Three decisions carried the design:
+
+**The token is stored hashed.** A share token is a bearer credential — whoever
+holds the link reads the report. Storing them in plaintext means a leaked backup
+or one over-broad policy hands over every live share at once. A SHA-256 is
+useless to a reader of the table and exactly as useful to the function checking
+one, which is the reasoning applied to passwords everywhere else. The cost is
+that the link is shown once and cannot be recovered, which is the right way
+round: a lost link costs two taps, a leaked table costs every report in it.
+
+**Refusals are deliberately indistinguishable.** An unknown token and an expired
+one give byte-identical answers. Telling them apart lets somebody working through
+guesses learn which were once real, and no legitimate reader does anything with
+the difference.
+
+**A reopened report goes dark.** A signed report can be unlocked and amended, and
+while it is open it is a working draft — half-corrected answers, a cleared score.
+A link handed out last week must not start showing that. It returns a "being
+updated" state rather than the draft, and the same link works again once the
+record is signed off. Revoking on reopen would have been the easier
+implementation and the wrong one: the link is not compromised, the record is
+merely mid-edit.
+
+The function serving this is the second one to run with the service key, which
+means row-level security is not underneath it. As with `invite-user`, every
+reason to refuse and every field a reader may see live in one pure module
+(`access.ts`) so both can be asserted — `npm run check:share-access`, in CI. What
+a reader gets is an allow-list rather than a set of deleted fields, so a column
+added to `inspections` next year is invisible here by default rather than
+disclosed by default. `created_by`, `org_id`, the internal ids and the reopening
+history are all deliberately absent, and photos travel as short-lived signed URLs
+rather than bucket keys.
+
+It also turned up a routing bug worth recording. The exemption that lets this one
+route past the sign-in gate read `window.location.hash` directly, and `App` does
+not re-render on a location change unless it consumes the router's location.
+Moving between two hashes of the same document is not a page load — so following
+a share link from a tab that already had QC2GO open showed the sign-in screen
+with no way past it, while the same link opened cold worked perfectly. The
+auth-gate suite caught it only because it arrives at the share route from a gated
+screen rather than from a fresh load; it now checks both.
 
 **`0011_webhooks.sql` — the first thing out of the building.** Completed
 inspections now reach other systems. Two decisions worth recording: the payload

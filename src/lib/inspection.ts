@@ -1,5 +1,6 @@
 import type {
   Answer,
+  Condition,
   FieldDef,
   Inspection,
   Question,
@@ -23,8 +24,22 @@ export const ANSWER_LABELS: Record<Answer, string> = {
   na: 'N/A',
 };
 
-export function isScored(question: Question): boolean {
+/**
+ * Answered with the Yes / No / N-A tiles.
+ *
+ * Not the same question as whether it counts. An informational checkpoint —
+ * "Gas-fired appliance on site" — is answered exactly like a standard and
+ * scored like nothing at all, so the two ideas need separate names. Conflating
+ * them is how a routing question ends up demanding a photograph of an appliance
+ * that is not there.
+ */
+export function isYesNo(question: Question): boolean {
   return (question.kind ?? 'yesno') === 'yesno';
+}
+
+/** Counts toward the score, and can become a deficiency. */
+export function isScored(question: Question): boolean {
+  return isYesNo(question) && !question.informational;
 }
 
 /**
@@ -85,21 +100,74 @@ export function instanceTitle(section: Section, instance: SectionInstance, posit
   return `${section.instanceNoun?.trim() || 'Item'} ${position}`;
 }
 
+/**
+ * Whether a condition is currently satisfied.
+ *
+ * An unanswered controlling question means "no": a conditional block appears
+ * once the question it depends on has been answered, and until then it is
+ * neither asked nor counted.
+ *
+ * The instance lookup falls back to the bare key so that a condition works
+ * whether the controlling checkpoint sits inside the same repeatable instance
+ * ("if this head has a condensate pump") or in a plain section elsewhere on the
+ * checklist ("if the system is a heat pump"). Instance first, because the nearer
+ * answer is the one that was meant.
+ */
+export function conditionMet(
+  inspection: Inspection,
+  condition: Condition | undefined,
+  instanceId?: string,
+): boolean {
+  if (!condition) return true;
+  const answer =
+    getResponse(inspection, condition.questionId, instanceId).answer ??
+    getResponse(inspection, condition.questionId).answer;
+  return answer !== null && answer !== undefined && condition.answerIn.includes(answer);
+}
+
+/**
+ * The questions of a section that currently apply.
+ *
+ * Every aggregate reaches this, and it is idempotent — filtering an
+ * already-filtered section changes nothing — precisely so it does not matter
+ * whether a caller hands over a raw section or one that came back from
+ * `expandSections`. A rule this important is worth being unable to skip.
+ */
+export function visibleQuestions(
+  inspection: Inspection,
+  section: Section,
+  instanceId?: string,
+): Question[] {
+  if (!section.questions.some((question) => question.showIf)) return section.questions;
+  return section.questions.filter((question) =>
+    conditionMet(inspection, question.showIf, instanceId),
+  );
+}
+
 export function expandSections(
   inspection: Inspection,
   sections: Section[],
 ): RenderedSection[] {
   const rendered: RenderedSection[] = [];
   for (const section of sections) {
+    // A section that does not apply is not rendered, not answered, not scored
+    // and not a blocker — the whole point of asking the question that hid it.
+    if (!conditionMet(inspection, section.showIf)) continue;
+
     if (!section.repeatable) {
-      rendered.push({ section, title: section.title, position: 1, key: section.id });
+      rendered.push({
+        section: withVisibleQuestions(inspection, section),
+        title: section.title,
+        position: 1,
+        key: section.id,
+      });
       continue;
     }
     // A repeatable section with no instances yet contributes nothing to answer
     // and nothing to score. It is a prompt to add one, which the runner shows.
     instancesOf(inspection, section).forEach((instance, index) => {
       rendered.push({
-        section,
+        section: withVisibleQuestions(inspection, section, instance.id),
         instanceId: instance.id,
         title: `${section.title} — ${instanceTitle(section, instance, index + 1)}`,
         position: index + 1,
@@ -108,6 +176,84 @@ export function expandSections(
     });
   }
   return rendered;
+}
+
+/** The same section with the questions that do not currently apply removed. */
+function withVisibleQuestions(
+  inspection: Inspection,
+  section: Section,
+  instanceId?: string,
+): Section {
+  const questions = visibleQuestions(inspection, section, instanceId);
+  // Returned unchanged when nothing is conditional, so the common case does not
+  // hand every consumer a new object identity on every render.
+  return questions.length === section.questions.length ? section : { ...section, questions };
+}
+
+export interface Skipped {
+  key: string;
+  /** The section title, or the checkpoint text. */
+  label: string;
+  /** "Gas-fired appliance on site — answered No" */
+  reason: string;
+  kind: 'section' | 'question';
+}
+
+/**
+ * What this checklist did not ask, and why.
+ *
+ * A conditional block that simply vanishes leaves a report that cannot be
+ * audited: a reader a year later has no way to tell a question that was skipped
+ * because it did not apply from one that was quietly dropped from the checklist,
+ * or never existed. Both look identical — absent.
+ *
+ * So the report states them. This reads the inspection's own frozen snapshot
+ * like everything else on a signed record, which means it keeps explaining
+ * itself correctly even after the live checklist has been rewritten.
+ */
+export function skippedBlocks(inspection: Inspection, sections: Section[]): Skipped[] {
+  const questionText = new Map<string, string>();
+  for (const section of sections) {
+    for (const question of section.questions) questionText.set(question.id, question.text);
+  }
+
+  const because = (condition: Condition): string => {
+    const asked = questionText.get(condition.questionId) ?? 'An earlier checkpoint';
+    const answer = getResponse(inspection, condition.questionId).answer;
+    return answer
+      ? `${asked} — answered ${ANSWER_LABELS[answer]}`
+      : `${asked} — not answered`;
+  };
+
+  const skipped: Skipped[] = [];
+  for (const section of sections) {
+    if (!conditionMet(inspection, section.showIf)) {
+      skipped.push({
+        key: section.id,
+        label: section.title,
+        reason: because(section.showIf!),
+        kind: 'section',
+      });
+      // Its questions are not listed separately: the section not applying is
+      // the one fact, and repeating it per question would bury the report.
+      continue;
+    }
+    for (const question of section.questions) {
+      // Only non-repeatable sections here. Which instance of a repeatable
+      // section hid which checkpoint is a level of detail nobody reading a
+      // report has ever wanted.
+      if (section.repeatable) continue;
+      if (!conditionMet(inspection, question.showIf)) {
+        skipped.push({
+          key: `${section.id}#${question.id}`,
+          label: question.text,
+          reason: because(question.showIf!),
+          kind: 'question',
+        });
+      }
+    }
+  }
+  return skipped;
 }
 
 /** A No answer is only complete once it carries both an explanation and a photo. */
@@ -139,12 +285,18 @@ export function sectionProgress(
   section: Section,
   instanceId?: string,
 ): SectionProgress {
-  const scored = section.questions.filter(isScored);
-  const progress: SectionProgress = { ...ZERO_PROGRESS, total: scored.length };
-  for (const question of scored) {
+  // Everything the inspector has to answer counts as work, including a routing
+  // question — otherwise a checklist can read 100% done while a question that
+  // is blocking sign-off sits untouched. Only the pass/fail tallies below are
+  // restricted to checkpoints that are actually scored.
+  const asked = visibleQuestions(inspection, section, instanceId).filter(isYesNo);
+  const progress: SectionProgress = { ...ZERO_PROGRESS, total: asked.length };
+  for (const question of asked) {
     const response = getResponse(inspection, question.id, instanceId);
     if (!response.answer) continue;
     progress.answered += 1;
+    // A fact about the job is answered, not passed.
+    if (!isScored(question)) continue;
     if (response.answer === 'yes') progress.passed += 1;
     if (response.answer === 'na') progress.na += 1;
     if (response.answer === 'no') {
@@ -184,6 +336,9 @@ export function deficiencies(inspection: Inspection, sections: Section[]): Defic
   const found: Deficiency[] = [];
   for (const rendered of expandSections(inspection, sections)) {
     for (const question of rendered.section.questions) {
+      // "No gas appliance on site" is an answer, not a punch item. Only a failed
+      // standard is something somebody has to go back and fix.
+      if (!isScored(question)) continue;
       const response = getResponse(inspection, question.id, rendered.instanceId);
       if (response.answer === 'no') {
         found.push({
@@ -256,6 +411,9 @@ export function completionBlockers(
   // anything about. On a five-head job that is five sets of answers missing, so
   // it blocks sign-off in its own right rather than passing silently.
   for (const section of sections) {
+    // Unless the section does not apply at all, in which case demanding an
+    // instance of it would be demanding work on a system that is not there.
+    if (!conditionMet(inspection, section.showIf)) continue;
     if (section.repeatable && instancesOf(inspection, section).length === 0) {
       blockers.push({
         kind: 'info',
@@ -268,7 +426,11 @@ export function completionBlockers(
   for (const rendered of expandSections(inspection, sections)) {
     const { section, instanceId, key: stepKey } = rendered;
     for (const question of section.questions) {
-      if (!isScored(question)) continue;
+      // Every yes/no checkpoint has to be answered, including an informational
+      // one — a forgotten routing question silently skips everything downstream
+      // of it, which is the one way this feature could lose a whole section of
+      // an inspection without anybody noticing.
+      if (!isYesNo(question)) continue;
       const response = getResponse(inspection, question.id, instanceId);
       const where = section.repeatable ? ` (${rendered.title})` : '';
       if (!response.answer) {
@@ -282,6 +444,8 @@ export function completionBlockers(
         });
         continue;
       }
+      // Evidence is owed for a failed standard, not for a fact about the job.
+      if (!isScored(question)) continue;
       if (response.answer === 'no') {
         if (!response.note?.trim()) {
           blockers.push({

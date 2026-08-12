@@ -87,6 +87,13 @@ jobs:
       - name: Check barcode capture
         run: npm run check:barcode
 
+      # A hidden checkpoint that still counts is the dangerous direction: a
+      # blocker naming a question that is nowhere on screen cannot be cleared by
+      # anybody, and an answer to a question that was never asked drags down a
+      # score nobody can explain.
+      - name: Check conditional logic
+        run: npm run check:conditions
+
       - name: Build
         run: npm run build
 

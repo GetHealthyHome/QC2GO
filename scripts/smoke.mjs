@@ -662,6 +662,7 @@ await page.waitForTimeout(600);
 await page.goto(BASE + '/#/checklists', { waitUntil: 'networkidle' });
 await page.getByRole('button', { name: 'New checklist' }).click();
 await page.waitForURL(/checklists\/tpl_/);
+const atticEditorUrl = page.url();
 await page.getByLabel('Checklist name').fill('Attic Prep Pre-Install');
 await page.getByLabel('Category').fill('home-performance');
 await page.getByLabel('Summary').fill('Walked before the crew starts insulation.');
@@ -698,6 +699,107 @@ check(
   'admin-created checklist is listed',
   (await page.getByText('Attic Prep Pre-Install').count()) > 0,
 );
+
+// --- conditional logic: a checkpoint that only applies sometimes ---
+//
+// Authored in the editor and then walked, because the failure this has to rule
+// out is an end-to-end one: a hidden question that still blocks sign-off leaves
+// a blocker naming a checkpoint that is nowhere on screen, which nobody can
+// clear and no amount of scrolling explains.
+const ROUTER = 'Walkboards installed where required';
+const DEPENDENT = 'Attic access is clear and safe to enter';
+
+await page.goto(atticEditorUrl, { waitUntil: 'networkidle' });
+await page.waitForTimeout(500);
+await page.getByRole('button', { name: /Access & Safety/ }).first().click();
+await page.waitForTimeout(300);
+
+// The first checkpoint becomes a fact about the job rather than a standard, so
+// answering it No is an answer and not a deficiency demanding a photograph.
+await page.getByRole('button', { name: 'Fact, not a standard' }).first().click();
+await page.waitForTimeout(200);
+
+const conditionSelect = page.getByLabel('Only ask this when');
+check(
+  'only earlier checkpoints can be depended on',
+  (await conditionSelect.count()) === 1,
+  `${await conditionSelect.count()} condition editors`,
+);
+await conditionSelect.selectOption({ label: ROUTER });
+await page.waitForTimeout(200);
+await shot('26-condition-authored');
+await page.getByRole('button', { name: 'Save changes' }).click();
+await page.waitForTimeout(700);
+
+await page.reload({ waitUntil: 'networkidle' });
+await page.waitForTimeout(600);
+await page.getByRole('button', { name: /Access & Safety/ }).first().click();
+await page.waitForTimeout(300);
+check(
+  'the condition survived a save and reload',
+  (await page.getByLabel('Only ask this when').inputValue()) !== '',
+  await page.getByLabel('Only ask this when').inputValue(),
+);
+
+// Now walk it.
+await page.goto(customerUrl, { waitUntil: 'networkidle' });
+await page.waitForTimeout(500);
+await page.getByRole('checkbox', { name: /Attic Prep Pre-Install/ }).click();
+await page.waitForTimeout(300);
+await page.getByRole('button', { name: /Attic Prep Pre-Install.*Start/s }).click();
+await page.waitForURL(/\/inspections\//);
+const atticUrl = page.url().replace(/\?.*$/, '');
+await page.waitForTimeout(400);
+
+// Straight to the section by name. Not by index — every checklist gets the
+// shared Universal section prepended, so position 1 is not this one.
+await page.locator('[data-active]').filter({ hasText: 'Access & Safety' }).first().click();
+await page.waitForTimeout(400);
+const beforeAnswer = await page.locator('body').innerText();
+check(
+  'a dependent checkpoint is not asked before its condition is answered',
+  beforeAnswer.includes(ROUTER) && !beforeAnswer.includes(DEPENDENT),
+  JSON.stringify(beforeAnswer.slice(0, 200)),
+);
+await shot('27-condition-hidden');
+
+const routerCard = page.locator('article').filter({ hasText: ROUTER });
+await routerCard.getByRole('button', { name: 'Yes', exact: true }).click();
+await page.waitForTimeout(400);
+check(
+  'answering it Yes reveals the dependent checkpoint',
+  (await page.locator('body').innerText()).includes(DEPENDENT),
+);
+await shot('28-condition-revealed');
+
+await routerCard.getByRole('button', { name: 'No', exact: true }).click();
+await page.waitForTimeout(400);
+const afterNo = await page.locator('body').innerText();
+check(
+  'and answering it No hides it again',
+  !afterNo.includes(DEPENDENT),
+  JSON.stringify(afterNo.slice(0, 200)),
+);
+check(
+  'a fact answered No does not demand an explanation and a photo',
+  !/explanation is required/i.test(afterNo),
+  JSON.stringify(afterNo.slice(0, 300)),
+);
+
+// The record has to be able to explain itself. A skipped question and one
+// quietly dropped from the checklist look identical — absent — unless the
+// report says which happened.
+await page.goto(atticUrl + '/report', { waitUntil: 'networkidle' });
+await page.waitForTimeout(700);
+const atticReport = await page.locator('body').innerText();
+check(
+  'the report says what was not applicable, and why',
+  /not applicable to this job/i.test(atticReport) &&
+    atticReport.includes(DEPENDENT) &&
+    atticReport.includes(ROUTER),
+  JSON.stringify(atticReport.slice(0, 300)),
+);
+await shot('29-condition-report', true);
 
 // --- quick safety audit from the home screen, at a brand new address ---
 await page.goto(BASE + '/', { waitUntil: 'networkidle' });

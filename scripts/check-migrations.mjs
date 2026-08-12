@@ -841,6 +841,75 @@ check('a deleted work order leaves a marker for offline devices', () => {
   return marker === '1' ? null : 'deleting a task left nothing for an offline device to find';
 });
 
+// ---------------------------------------------------------------------------
+// The AI meter
+// ---------------------------------------------------------------------------
+
+check('a call is claimed against the caller\'s own company', () => {
+  const granted = tx(ACME, `select public.ai_take('scribe');`);
+  const counted = psql(
+    `select calls from public.ai_usage
+      where org_id = 'aaaaaaaa-0000-0000-0000-000000000001'
+        and day = (now() at time zone 'utc')::date and kind = 'scribe';`,
+  );
+  if (granted !== 't') return 'the first call of the day was refused';
+  return counted === '1' ? null : `the counter reads ${counted}`;
+});
+
+check('THE CEILING: the allowance actually runs out', () => {
+  // The whole point of the table. A meter that counts but never refuses is a
+  // meter nobody finds out about until the invoice.
+  psql(`update public.ai_usage set calls = 200
+         where org_id = 'aaaaaaaa-0000-0000-0000-000000000001';`);
+  const granted = tx(ACME, `select public.ai_take('scribe');`);
+  if (granted !== 'f') return 'a call was granted past the daily limit';
+  const counted = psql(
+    `select calls from public.ai_usage
+      where org_id = 'aaaaaaaa-0000-0000-0000-000000000001'
+        and day = (now() at time zone 'utc')::date and kind = 'scribe';`,
+  );
+  // A refused call must not be billed to the counter either, or a company that
+  // hits the ceiling keeps climbing it and never comes back down tomorrow.
+  return counted === '200' ? null : `a refused call still moved the counter to ${counted}`;
+});
+
+check('and one company using theirs up does not spend another\'s', () => {
+  const granted = tx(BETA, `select public.ai_take('scribe');`);
+  return granted === 't' ? null : 'Beta was refused because Acme had spent its allowance';
+});
+
+check('THE METER IS NOT WRITABLE by the company it meters', () => {
+  // If it were, resetting the counter would be one PostgREST call away and the
+  // ceiling would be decorative.
+  const inserted = tx(
+    BETA,
+    `insert into public.ai_usage (org_id, day, kind, calls)
+      values ('aaaaaaaa-0000-0000-0000-000000000001', current_date - 1, 'scribe', 0);`,
+    { expectError: true },
+  );
+  if (!inserted?.error) return 'a company wrote its own usage row';
+  tx(ACME, `update public.ai_usage set calls = 0;`);
+  const counted = psql(
+    `select calls from public.ai_usage
+      where org_id = 'aaaaaaaa-0000-0000-0000-000000000001'
+        and day = (now() at time zone 'utc')::date and kind = 'scribe';`,
+  );
+  return counted === '200' ? null : 'a company reset its own counter';
+});
+
+check('a company can read what it has used, and only that', () => {
+  const rows = tx(BETA, `select count(*) from public.ai_usage;`);
+  return rows === '1' ? null : `Beta can see ${rows} usage rows`;
+});
+
+check('an account with no company is metered to nothing at all', () => {
+  // Local-mode and not-yet-invited accounts have nothing to charge. Granting
+  // them a call would be an unmetered endpoint reachable by any sign-up.
+  // Created by the tenancy checks above, and still in no company.
+  const granted = tx('33333333-3333-3333-3333-333333333333', `select public.ai_take('scribe');`);
+  return granted === 'f' ? null : 'an account outside every company was granted a call';
+});
+
 check('an owner can set their own company logo', () => {
   tx(ACME, `update public.organizations set logo = 'data:image/png;base64,AAAA'
              where id = 'aaaaaaaa-0000-0000-0000-000000000001';`);

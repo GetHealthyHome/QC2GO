@@ -118,7 +118,7 @@ two-layer org/team hierarchy does not yet — there is one layer, of three roles
 | Barcode / QR scanning into mapped fields | **Partial** | `src/lib/barcode.ts` + `src/components/BarcodeScanner.tsx`. The scanner stays open after a hit and keeps reading, because a ductless job has a serial on the outdoor unit and one on every head. Repeats are suppressed, so holding the camera steady on one plate does not fill the field with forty copies of it. Blocked on iOS until a WebAssembly decoder is added — see §13. |
 | Instacount visual counting | **Gap** | — |
 | AI Walkthroughs (video/voice → mapped fields) | **Gap** | — |
-| AI Scribe (grammar, tone, summarize) | **Gap** | Deficiency notes are typed raw. A narrow, cheap version — clean up one note on demand — is a strong early AI win because the note text goes straight to the customer. |
+| AI Scribe (grammar, tone, summarize) | **Built** | "Tidy up" on a deficiency note (`supabase/functions/ai-scribe/`). Narrow on purpose: one note, on demand, offered beside the original and applied only when somebody presses Use this. Because the note text goes straight to the customer, the server discards any suggestion that lost a measurement, gained one, reordered them, or flipped a negative — `ai-scribe/fidelity.ts`, asserted by `npm run check:scribe`. Summarising a whole report is still a gap. |
 | Copy camera notes into template fields | **Partial** | `PhotoRecord.caption` exists in the model and round-trips through sync (`src/lib/syncMap.ts:164`) but is never set or shown in the UI. |
 | Photos survive offline and sync later | **Built** | Beyond the TRD: photos are pulled as records and the bytes fetched lazily on first render (`supabase/README.md`, "Photos are pulled as records, not bytes"). |
 
@@ -327,8 +327,12 @@ Ordered by value per unit of effort, with the dependency that gates each one.
     for in-house crews, computable from data already stored.
 13. **Tasks & work orders** with the TRD's six-state lifecycle, once punch lists
     have proven the assignment model.
-14. **AI Scribe**, then **AI template generation**, then **AI Walkthroughs** —
-    in that order of cost and risk.
+14. ~~**AI Scribe**~~ (built), then **AI template generation**, then **AI
+    Walkthroughs** — in that order of cost and risk. Scribe went first because
+    it is the cheapest to run and the easiest to make safe: one note, one call,
+    and a suggestion nobody has to take. The two that follow are harder for the
+    same reason in reverse — a generated template and a transcribed walkthrough
+    both produce content with no original to check them against.
 
 **Deliberately not pursued** (revisit only if the app opens to outside
 subcontractors): domain/WHOIS analytics, carrier lookup, VPN/Tor detection, the

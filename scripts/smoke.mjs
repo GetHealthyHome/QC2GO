@@ -294,6 +294,11 @@ check(
 // signed.
 console.log('--- reopening a signed inspection ---');
 
+// Back to the report: the punch list left the browser on a different screen,
+// and every assertion below is about the button that lives on this one.
+await page.goto(inspectionUrl + '/report', { waitUntil: 'networkidle' });
+await page.waitForTimeout(500);
+
 const reopenButton = page.getByRole('button', { name: /Reopen for editing/ });
 
 await withDialogs([null], () => reopenButton.click());

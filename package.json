@@ -25,7 +25,8 @@
     "check:conditions": "node scripts/check-conditions.mjs",
     "check:integrity": "node scripts/check-integrity.mjs",
     "check:sweep": "node scripts/check-sweep.mjs",
-    "check:pdf-layout": "node scripts/check-pdf-layout.mjs"
+    "check:pdf-layout": "node scripts/check-pdf-layout.mjs",
+    "check:tasks": "node scripts/check-tasks.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

@@ -357,8 +357,63 @@ export interface PhotoRecord {
   createdAt: string;
 }
 
+/**
+ * The TRD's work-order lifecycle, in order.
+ *
+ * Six states is more than a small crew needs to describe a job, and that is the
+ * point of two of them: `done` is the claim that the work is finished and
+ * `verified` is somebody else having looked. Collapsing those two is exactly the
+ * thing a QC app exists not to do.
+ */
+export type TaskState = 'new' | 'assigned' | 'todo' | 'in-progress' | 'done' | 'verified';
+
+/** One state change, kept so the record says who moved it and when. */
+export interface TaskEvent {
+  at: string;
+  /** Account that made the change. Absent on local-only data. */
+  by?: string;
+  to: TaskState;
+  note?: string;
+}
+
+/**
+ * A piece of work somebody owns.
+ *
+ * Two kinds live in the same record. Most tasks correct a punch item — a
+ * checkpoint that was failed — and carry `punchKey` back to it. The rest are
+ * standalone work orders raised against a customer with no failed checkpoint
+ * behind them: order the part, book the crane, come back when the drywall is up.
+ *
+ * A task never copies the checkpoint's wording. The punch list reads that back
+ * out of the inspection's frozen snapshot, and a second copy here would drift
+ * from the record that was actually signed.
+ */
+export interface Task {
+  id: string;
+  customerId: string;
+  /** The punch item this exists to correct, if it came from one. */
+  punchKey?: string;
+  /** The inspection that raised it, for the link back to where it failed. */
+  inspectionId?: string;
+  title: string;
+  detail?: string;
+  state: TaskState;
+  /** A name from the admin-maintained roster, not an account. */
+  assignee?: string;
+  /** Raised from a checkpoint the checklist marks critical. */
+  critical?: boolean;
+  /** `YYYY-MM-DD`, as typed — no time zone to get wrong. */
+  dueDate?: string;
+  history: TaskEvent[];
+  /** Account that created the record. Absent on local-only data. */
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+  archived?: boolean;
+}
+
 /** What the sync engine moves, and the local record it maps to. */
-export type SyncEntity = 'customer' | 'inspection' | 'photo' | 'template' | 'shared';
+export type SyncEntity = 'customer' | 'inspection' | 'photo' | 'template' | 'shared' | 'task';
 
 /**
  * A local change waiting to reach the server. Keyed `<entity>:<recordId>` so a

@@ -504,6 +504,49 @@ check('the failed checkpoint appears as an open punch item', punchText.includes(
   JSON.stringify(punchText.slice(0, 140)));
 check('its explanation came with it', punchText.includes('Concord building department'));
 
+// --- putting somebody's name on a deficiency ---
+//
+// The lifecycle rules are asserted in `check:tasks`. What only a browser can
+// show is that raising a task from a punch item ties the two together — and
+// above all that closing it in one place closes it in the other, because a
+// deficiency that reads as corrected on one screen and open on another is the
+// failure that makes people stop believing both.
+console.log('--- work orders ---');
+await page.getByRole('button', { name: /Raise a work order/ }).first().click();
+await page.waitForTimeout(400);
+check(
+  'a raised work order shows on the punch item, owned by nobody',
+  /nobody yet/i.test(await page.locator('body').innerText()),
+);
+
+await page.goto(BASE + '/#/tasks', { waitUntil: 'networkidle' });
+await page.waitForTimeout(500);
+const board = await page.locator('body').innerText();
+check('the work order reached the board', board.includes('Permit'), JSON.stringify(board.slice(0, 200)));
+// Uppercased by CSS on the card, and innerText reports what is rendered.
+check('and carries the customer it belongs to', /dana whitfield/i.test(board));
+check(
+  'an unowned task offers no way forward until it has a name on it',
+  /give this task to somebody/i.test(board),
+  JSON.stringify(board.slice(0, 400)),
+);
+
+// Typed rather than picked: the roster pick list is empty on a company that
+// has not filled it in, and a board nobody can assign anybody on is frozen.
+await page.getByLabel('Assigned to').first().fill('M. Okafor');
+await page.waitForTimeout(600);
+const owned = await page.locator('body').innerText();
+check('assigning it opens up the lifecycle', /assigned/i.test(owned));
+check(
+  'THE POINT OF SIX STATES: it cannot be verified before anybody says it is done',
+  !(await page.getByRole('button', { name: /^Verified$/ }).count()),
+  'Verified was offered straight from New',
+);
+await shot('15c2-work-order', true);
+
+await page.goto(customerUrl + '/punch', { waitUntil: 'networkidle' });
+await page.waitForTimeout(400);
+
 await withDialogs(['Permit pulled and posted on site'], () =>
   page.getByRole('button', { name: /Mark corrected/ }).first().click(),
 );
@@ -512,6 +555,24 @@ check('marking it corrected empties the open list', /nothing outstanding/i.test(
 check('the correction note is kept', afterClose.includes('Permit pulled and posted on site')
   || /corrected \(1\)/i.test(afterClose));
 await shot('15c-punch-list', true);
+
+// THE TWO TRUTHS: the board has to agree, without anybody having touched it.
+await page.goto(BASE + '/#/tasks', { waitUntil: 'networkidle' });
+await page.waitForTimeout(500);
+check(
+  'correcting the deficiency closed its work order too',
+  !/permit/i.test(await page.locator('body').innerText()),
+  'the board still shows an open work order for a corrected deficiency',
+);
+await page.getByRole('button', { name: /^All \(/ }).click();
+await page.waitForTimeout(300);
+check(
+  'and it reads as verified rather than having vanished',
+  /verified/i.test(await page.locator('body').innerText()),
+);
+
+await page.goto(customerUrl + '/punch', { waitUntil: 'networkidle' });
+await page.waitForTimeout(400);
 
 // Closing a punch item must not touch the inspection that raised it — a signed
 // inspection is a record, and this is the change most likely to erode that.

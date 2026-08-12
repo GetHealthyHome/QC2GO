@@ -36,7 +36,20 @@ interface Row {
 }
 
 export function HomeScreen() {
-  const { customers, inspections, templates, shared, isAdmin } = useStore();
+  const { customers, inspections, templates, shared, isAdmin, tasks } = useStore();
+
+  // Read through the punch resolutions, so a deficiency corrected on the punch
+  // screen stops being counted here too. One record of whether it was fixed.
+  const openWork = useMemo(() => {
+    const resolutions: Record<string, unknown> = {};
+    for (const customer of customers) Object.assign(resolutions, customer.punchResolutions ?? {});
+    return tasks.filter(
+      (task) =>
+        !task.archived &&
+        task.state !== 'verified' &&
+        !(task.punchKey && resolutions[task.punchKey]),
+    ).length;
+  }, [tasks, customers]);
   const [query, setQuery] = useState('');
   const [origin, setOrigin] = useState<{ lat: number; lng: number } | null>(null);
   const [locating, setLocating] = useState(false);
@@ -160,6 +173,18 @@ export function HomeScreen() {
             </Button>
           </Link>
         </div>
+
+        {/*
+          * Always reachable, but it says how much is outstanding rather than
+          * just naming itself — a link that reads "Work orders" is one nobody
+          * taps to find out there is nothing in it.
+          */}
+        <Link to="/tasks" className="mt-2 block">
+          <Button variant="secondary" block className={openWork > 0 ? 'border-warn-300 text-warn-700' : undefined}>
+            <ClipboardIcon className="size-5" />
+            {openWork === 0 ? 'Work orders' : `Work orders · ${openWork} open`}
+          </Button>
+        </Link>
 
         {locationError ? (
           <p className="mt-2 rounded-xl bg-fail-50 px-3 py-2 text-[13px] text-fail-700">

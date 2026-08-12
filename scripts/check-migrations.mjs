@@ -710,6 +710,137 @@ check('deleting an inspection takes its links down with it', () => {
   return left === '0' ? null : `${left} link(s) outlived the record`;
 });
 
+// ---------------------------------------------------------------------------
+// Tasks and work orders
+// ---------------------------------------------------------------------------
+
+check('a company can raise a work order on its own customer', () => {
+  const created = tx(
+    ACME,
+    `insert into public.tasks (id, org_id, customer_id, title, state, created_by)
+     values ('task-acme-1', 'aaaaaaaa-0000-0000-0000-000000000001', 'cust-acme',
+             'Return to fit the filter rack', 'new', '${ACME}');`,
+    { expectError: true },
+  );
+  return created?.error ? `Acme could not raise its own work order: ${created.error}` : null;
+});
+
+check('THE BOUNDARY: one company cannot see another\'s work orders', () => {
+  // The board is the one screen that reads across every customer at once, so a
+  // policy missing here leaks the whole company rather than one record.
+  const seen = tx(BETA, `select count(*) from public.tasks where id = 'task-acme-1';`);
+  return seen === '0' ? null : `Beta could see Acme's board (${seen})`;
+});
+
+check('nor move one', () => {
+  // Reading somebody else's board is bad; closing work on it is worse, because
+  // the record would say the job was finished.
+  tx(BETA, `update public.tasks set state = 'verified' where id = 'task-acme-1';`);
+  const state = psql(`select state from public.tasks where id = 'task-acme-1';`);
+  return state === 'new' ? null : `Beta moved an Acme task to ${state}`;
+});
+
+check('nor delete one', () => {
+  tx(BETA, `delete from public.tasks where id = 'task-acme-1';`);
+  const left = psql(`select count(*) from public.tasks where id = 'task-acme-1';`);
+  return left === '1' ? null : 'Beta deleted an Acme work order';
+});
+
+check('nor file one against another company', () => {
+  const forged = tx(
+    BETA,
+    `insert into public.tasks (id, org_id, customer_id, title, state, created_by)
+     values ('task-forged', 'aaaaaaaa-0000-0000-0000-000000000001', 'cust-acme',
+             'Ignore this', 'new', '${BETA}');`,
+    { expectError: true },
+  );
+  return forged?.error ? null : 'Beta put work on Acme\'s board';
+});
+
+check('a state that is not a state is refused', () => {
+  // The lifecycle is enforced in the app, where it can explain itself. What the
+  // database refuses is a typo that would put a task in a column no board has.
+  const bogus = psql(
+    `insert into public.tasks (id, org_id, customer_id, title, state, created_by)
+     values ('task-bogus', 'aaaaaaaa-0000-0000-0000-000000000001', 'cust-acme',
+             'x', 'finished', '${ACME}');`,
+    { expectError: true },
+  );
+  return bogus?.error ? null : 'a task was stored in a state nothing can display';
+});
+
+check('one deficiency cannot carry two live work orders', () => {
+  // Two rows that close each other, and neither looks wrong on the board.
+  psql(
+    `insert into public.tasks (id, org_id, customer_id, punch_key, title, state, created_by)
+     values ('task-punch-1', 'aaaaaaaa-0000-0000-0000-000000000001', 'cust-acme',
+             'insp-acme:q7', 'Seal the rim joist', 'new', '${ACME}');`,
+  );
+  const duplicate = psql(
+    `insert into public.tasks (id, org_id, customer_id, punch_key, title, state, created_by)
+     values ('task-punch-2', 'aaaaaaaa-0000-0000-0000-000000000001', 'cust-acme',
+             'insp-acme:q7', 'Seal the rim joist again', 'new', '${ACME}');`,
+    { expectError: true },
+  );
+  if (!duplicate?.error) return 'the same deficiency was raised twice';
+
+  // ...but archiving the first has to release it, or a task raised by mistake
+  // makes that deficiency permanently unassignable with nothing explaining why.
+  psql(`update public.tasks set archived = true where id = 'task-punch-1';`);
+  const afterArchive = psql(
+    `insert into public.tasks (id, org_id, customer_id, punch_key, title, state, created_by)
+     values ('task-punch-3', 'aaaaaaaa-0000-0000-0000-000000000001', 'cust-acme',
+             'insp-acme:q7', 'Seal the rim joist', 'new', '${ACME}');`,
+    { expectError: true },
+  );
+  return afterArchive?.error
+    ? 'an archived task kept its deficiency locked forever'
+    : null;
+});
+
+check('two companies may key a task to the same punch id', () => {
+  // Ids are unique in practice, but the index is company-scoped on purpose —
+  // a global one would let one company's row block another's insert.
+  psql(
+    `insert into public.customers (id, org_id, customer_name, address, salesperson, team_leader, created_by)
+     values ('cust-beta-tasks', 'bbbbbbbb-0000-0000-0000-000000000002', 'Beta', 'x', 'y', 'z', '${BETA}')
+     on conflict (id) do nothing;`,
+  );
+  const beta = psql(
+    `insert into public.tasks (id, org_id, customer_id, punch_key, title, state, created_by)
+     values ('task-beta-1', 'bbbbbbbb-0000-0000-0000-000000000002', 'cust-beta-tasks',
+             'insp-acme:q7', 'Unrelated', 'new', '${BETA}');`,
+    { expectError: true },
+  );
+  return beta?.error ? `a company-scoped index behaved globally: ${beta.error}` : null;
+});
+
+check('deleting a customer takes their work orders with them', () => {
+  // A work order pointing at a customer who is no longer there is a row on a
+  // board that can be neither opened nor closed.
+  psql(
+    `insert into public.customers (id, org_id, customer_name, address, salesperson, team_leader, created_by)
+     values ('cust-doomed-task', 'aaaaaaaa-0000-0000-0000-000000000001', 'Doomed', 'x', 'y', 'z', '${ACME}');`,
+  );
+  psql(
+    `insert into public.tasks (id, org_id, customer_id, title, state, created_by)
+     values ('task-doomed', 'aaaaaaaa-0000-0000-0000-000000000001', 'cust-doomed-task',
+             'x', 'new', '${ACME}');`,
+  );
+  psql(`delete from public.customers where id = 'cust-doomed-task';`);
+  const left = psql(`select count(*) from public.tasks where id = 'task-doomed';`);
+  return left === '0' ? null : 'a work order outlived its customer';
+});
+
+check('a deleted work order leaves a marker for offline devices', () => {
+  // The pull only ever sees rows that still exist. Without a tombstone a device
+  // that was offline keeps a dead work order on its board forever.
+  const marker = psql(
+    `select count(*) from public.tombstones where entity = 'task' and entity_id = 'task-doomed';`,
+  );
+  return marker === '1' ? null : 'deleting a task left nothing for an offline device to find';
+});
+
 check('an owner can set their own company logo', () => {
   tx(ACME, `update public.organizations set logo = 'data:image/png;base64,AAAA'
              where id = 'aaaaaaaa-0000-0000-0000-000000000001';`);

@@ -16,6 +16,7 @@ import {
   photosRepo,
   settingsRepo,
   sharedRepo,
+  tasksRepo,
   templatesRepo,
 } from './db';
 import {
@@ -34,10 +35,13 @@ import type {
   PhotoRecord,
   Settings,
   SharedConfig,
+  Task,
+  TaskState,
   Template,
   VisitType,
 } from './types';
 import { hasAdminRights } from './types';
+import { applyMove, canMove, resolutionFor, type MoveDecision } from './tasks';
 import { BUILT_IN_TEMPLATES, defaultSharedConfig } from '../templates';
 import { resolveChecklist, snapshotOf } from './checklist';
 import { todayIso } from './inspection';
@@ -87,6 +91,7 @@ interface StoreValue {
   customers: Customer[];
   inspections: Inspection[];
   templates: Template[];
+  tasks: Task[];
   shared: SharedConfig;
   settings: Settings;
   isAdmin: boolean;
@@ -122,6 +127,19 @@ interface StoreValue {
   duplicateTemplate: (id: string) => Promise<Template | undefined>;
   removeTemplate: (id: string) => Promise<void>;
   resetTemplate: (id: string) => Promise<void>;
+  createTask: (input: Omit<Task, 'id' | 'history' | 'createdAt' | 'updatedAt'>) => Promise<Task>;
+  updateTask: (id: string, patch: Partial<Task>) => Promise<void>;
+  /**
+   * Move a task through the lifecycle. Refuses an illegal move rather than
+   * writing it, and returns why so the screen can say so.
+   *
+   * Verifying a task that corrects a punch item does not set its state — it
+   * records the deficiency as corrected on the customer, which is where the
+   * punch list already looks and where `effectiveState` reads it back. One
+   * record of whether a deficiency was fixed, not two that can disagree.
+   */
+  moveTask: (id: string, to: TaskState, note?: string) => Promise<MoveDecision>;
+  removeTask: (id: string) => Promise<void>;
   saveShared: (next: SharedConfig) => Promise<void>;
   resetShared: () => Promise<void>;
   /** What the sync engine is doing, for the status line on Settings. */
@@ -147,6 +165,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     role: 'inspector',
   });
 
+  const [tasks, setTasks] = useState<Task[]>([]);
+
   /** Pending debounced writes keyed by inspection id, flushed on unload. */
   const pendingWrites = useRef(new Map<string, { timer: number; record: Inspection }>());
 
@@ -158,8 +178,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       settingsRepo.get(),
       templatesRepo.all(),
       sharedRepo.get(),
+      tasksRepo.all(),
     ])
-      .then(async ([loadedCustomers, loadedInspections, loadedSettings, loadedTemplates, loadedShared]) => {
+      .then(async ([
+        loadedCustomers,
+        loadedInspections,
+        loadedSettings,
+        loadedTemplates,
+        loadedShared,
+        loadedTasks,
+      ]) => {
         // First run: seed the editable stores from the shipped checklists.
         let seededTemplates = loadedTemplates;
         if (seededTemplates.length === 0) {
@@ -182,6 +210,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         setSettings(loadedSettings);
         setTemplates(seededTemplates);
         setShared(seededShared);
+        setTasks(loadedTasks);
         setReady(true);
       })
       .catch((error) => {
@@ -224,11 +253,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       inspectionsRepo.all(),
       templatesRepo.all(),
       sharedRepo.get(),
-    ]).then(([nextCustomers, nextInspections, nextTemplates, nextShared]) => {
+      tasksRepo.all(),
+    ]).then(([nextCustomers, nextInspections, nextTemplates, nextShared, nextTasks]) => {
       if (cancelled) return;
       setCustomers(nextCustomers);
       setInspections(nextInspections);
       setTemplates(nextTemplates);
+      setTasks(nextTasks);
       if (nextShared) setShared(nextShared);
     });
     return () => {
@@ -302,6 +333,75 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     await enqueue('customer', id, 'delete');
     setCustomers((current) => current.filter((customer) => customer.id !== id));
     setInspections((current) => current.filter((inspection) => inspection.customerId !== id));
+  }, []);
+
+  const createTask = useCallback<StoreValue['createTask']>(
+    async (input) => {
+      const now = new Date().toISOString();
+      const by = auth.profile?.email;
+      const task: Task = {
+        ...input,
+        id: newId('task'),
+        history: [{ at: now, to: input.state, ...(by ? { by } : {}) }],
+        createdBy: by,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await tasksRepo.put(task);
+      setTasks((current) => [...current, task]);
+      await enqueue('task', task.id, 'upsert');
+      return task;
+    },
+    [auth.profile?.email],
+  );
+
+  const updateTask = useCallback<StoreValue['updateTask']>(async (id, patch) => {
+    const stored = await tasksRepo.get(id);
+    if (!stored) return;
+    const next: Task = { ...stored, ...patch, updatedAt: new Date().toISOString() };
+    await tasksRepo.put(next);
+    setTasks((current) => current.map((task) => (task.id === id ? next : task)));
+    await enqueue('task', id, 'upsert');
+  }, []);
+
+  const moveTask = useCallback<StoreValue['moveTask']>(
+    async (id, to, note) => {
+      const stored = await tasksRepo.get(id);
+      if (!stored) return { ok: false, reason: 'That task is no longer on this device.' };
+
+      const decision = canMove(stored, to, { note });
+      if (!decision.ok) return decision;
+
+      const now = new Date().toISOString();
+      const by = auth.profile?.email;
+
+      // Verifying a linked task writes the deficiency's correction, not a
+      // second record of it. `effectiveState` reads it back, so the punch
+      // screen and the board cannot end up saying different things.
+      if (to === 'verified' && stored.punchKey) {
+        const customer = await customersRepo.get(stored.customerId);
+        if (customer) {
+          const punchResolutions = {
+            ...(customer.punchResolutions ?? {}),
+            [stored.punchKey]: resolutionFor({ by, note, now }),
+          };
+          await updateCustomer(customer.id, { punchResolutions });
+        }
+      }
+
+      const next = applyMove(stored, to, { by, note, now });
+      await tasksRepo.put(next);
+      setTasks((current) => current.map((task) => (task.id === id ? next : task)));
+      await enqueue('task', id, 'upsert');
+      return { ok: true };
+    },
+    [auth.profile?.email, updateCustomer],
+  );
+
+  const removeTask = useCallback<StoreValue['removeTask']>(async (id) => {
+    await tasksRepo.remove(id);
+    setTasks((current) => current.filter((task) => task.id !== id));
+    await enqueue('task', id, 'delete');
   }, []);
 
   const createInspection = useCallback<StoreValue['createInspection']>(
@@ -562,6 +662,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       customers,
       inspections,
       templates,
+      tasks,
       shared,
       settings,
       // With accounts connected the role is the server's answer, not a local
@@ -584,6 +685,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       duplicateTemplate,
       removeTemplate,
       resetTemplate,
+      createTask,
+      updateTask,
+      moveTask,
+      removeTask,
       saveShared,
       resetShared,
       sync,
@@ -594,9 +699,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       customers,
       inspections,
       templates,
+      tasks,
       shared,
       settings,
       auth.profile,
+      createTask,
+      updateTask,
+      moveTask,
+      removeTask,
       createCustomer,
       updateCustomer,
       removeCustomer,

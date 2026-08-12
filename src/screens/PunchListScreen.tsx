@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useCustomer, useCustomerInspections, useStore } from '../lib/store';
 import { useAuth } from '../lib/auth';
 import { punchListFor, undocumented, type PunchItem } from '../lib/punch';
+import { TASK_LABELS, taskFromPunchItem } from '../lib/tasks';
 import { formatDate, formatDateTime } from '../lib/inspection';
 import type { PunchResolution } from '../lib/types';
 import { PhotoThumb, PhotoViewer } from '../components/Photos';
@@ -22,7 +23,7 @@ export function PunchListScreen() {
   const { customerId } = useParams();
   const customer = useCustomer(customerId);
   const inspections = useCustomerInspections(customerId);
-  const { templates, shared, updateCustomer, settings } = useStore();
+  const { templates, shared, updateCustomer, settings, tasks, createTask } = useStore();
   const { profile } = useAuth();
   const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
   const [showResolved, setShowResolved] = useState(false);
@@ -32,6 +33,10 @@ export function PunchListScreen() {
     [customer, inspections, templates, shared],
   );
   const missingEvidence = useMemo(() => undocumented(list.open), [list.open]);
+
+  /** The open work order raised for a punch item, if somebody raised one. */
+  const taskFor = (item: PunchItem) =>
+    tasks.find((task) => !task.archived && task.punchKey === item.key);
 
   if (!customer) {
     return (
@@ -50,6 +55,31 @@ export function PunchListScreen() {
     if (resolution) next[item.key] = resolution;
     else delete next[item.key];
     void updateCustomer(customer.id, { punchResolutions: next });
+  }
+
+  /**
+   * Put somebody's name on a deficiency.
+   *
+   * The task carries the link back rather than a second copy of the checkpoint:
+   * the punch list keeps reading the wording out of the inspection's frozen
+   * snapshot, and marking the item corrected here is still what closes both.
+   */
+  function raise(item: PunchItem) {
+    if (!customer) return;
+    const draft = taskFromPunchItem(item, {
+      customerId: customer.id,
+      id: 'unused',
+      now: new Date().toISOString(),
+    });
+    void createTask({
+      customerId: draft.customerId,
+      punchKey: draft.punchKey,
+      inspectionId: draft.inspectionId,
+      title: draft.title,
+      detail: draft.detail,
+      state: draft.state,
+      critical: draft.critical,
+    });
   }
 
   function close(item: PunchItem) {
@@ -110,10 +140,26 @@ export function PunchListScreen() {
                 item={item}
                 onOpenPhoto={setViewingPhoto}
                 action={
-                  <Button variant="secondary" className="w-full" onClick={() => close(item)}>
-                    <CheckIcon className="size-4" />
-                    Mark corrected
-                  </Button>
+                  <>
+                    <Button variant="secondary" className="w-full" onClick={() => close(item)}>
+                      <CheckIcon className="size-4" />
+                      Mark corrected
+                    </Button>
+                    {taskFor(item) ? (
+                      <Link
+                        to="/tasks"
+                        className="py-1.5 text-center text-[13px] font-semibold text-brand-700"
+                      >
+                        {taskFor(item)!.assignee
+                          ? `${taskFor(item)!.assignee} · ${TASK_LABELS[taskFor(item)!.state]}`
+                          : `Nobody yet · ${TASK_LABELS[taskFor(item)!.state]}`}
+                      </Link>
+                    ) : (
+                      <Button variant="ghost" className="w-full" onClick={() => raise(item)}>
+                        Raise a work order
+                      </Button>
+                    )}
+                  </>
                 }
               />
             ))}

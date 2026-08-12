@@ -160,10 +160,10 @@ turns out to be wrong has not stamped a permanent accusation onto a QC document.
 | --- | :---: | --- |
 | Scoring engine — pass/fail thresholds, composite % | **Partial** | `scoreOf` (`src/lib/inspection.ts:257`): percentage of judged items passed, N/A excluded so skipping cannot inflate; `scoreBand` (`:285`) gives pass ≥95 / watch ≥85 / fail, with **any critical failure forcing fail regardless of percentage**. Section-level progress exists (`sectionProgress`). |
 | Configurable point allocations (0–100) per answer | **Gap** | Every checkpoint weighs the same. Thresholds are constants in code, not settings. |
-| Auto-flagging → Supervisor Triage Queue | **Gap** | Failures are visible on the inspection and on its QC card, but nothing routes anywhere or lands in anyone's queue. |
+| Auto-flagging → Supervisor Triage Queue | **Partial** | A failure still does not route anywhere by itself, but there is now a queue for it to land in: the work-order board is company-wide, orders critical items first and overdue ones next, and is reachable from the home screen with its open count on the button. Raising the task is a deliberate act on the punch list rather than something that happens automatically. |
 | Custom flag library, colour-coded, sticky flag nav | **Partial** | Two fixed flags — `critical` and `photoOnPass` (`src/lib/types.ts:22`) — set per checkpoint by an admin, and consistently colour-coded in the UI. No user-defined flag set, no in-inspection flag navigation bar. |
-| Tasks & work orders, `New → Assigned → To Do → In Progress → Done → Verified` | **Gap** | No task entity exists. |
-| Punch lists & deficiency tracking to sign-off | **Built, less assignment** | `src/lib/punch.ts` + `PunchListScreen`: every failed checkpoint across a customer's inspections, critical first, each linking back to the inspection that raised it, closable with a note on a re-check. Read back through each inspection's frozen snapshot, so the wording is what was actually failed. Still missing: assignment to a person or subcontractor. |
+| Tasks & work orders, `New → Assigned → To Do → In Progress → Done → Verified` | **Built** | `src/lib/tasks.ts` + `TasksScreen`, on a synced `tasks` table (`0014_tasks.sql`). All six states, with the transitions decided in one pure module rather than by whichever button is on screen: `assigned` and beyond require an assignee, and `verified` is reachable only from `done` — otherwise the two states that carry the whole point of the lifecycle collapse into one. Reopening a verified task demands a reason, as unlocking a signed inspection does. Missing from the TRD's version: no assignment to an outside subcontractor, which needs the account model the third-party sharing row describes. |
+| Punch lists & deficiency tracking to sign-off | **Built** | `src/lib/punch.ts` + `PunchListScreen`: every failed checkpoint across a customer's inspections, critical first, each linking back to the inspection that raised it, closable with a note on a re-check. Read back through each inspection's frozen snapshot, so the wording is what was actually failed. A punch item can now be raised as a work order, which puts a name and a due date on it; the correction itself is still recorded in one place — on the customer — and the board reads it back rather than keeping a second copy. |
 | Custom statuses & approval routing (`Submitted → QA Review → Client Approved → Archived`) | **Gap** | `InspectionStatus` is `in-progress \| completed` (`src/lib/types.ts:151`). |
 | Inspection locking with rationale log on override | **Built** | A completed inspection is read-only in the app and the server refuses edits to one from anybody but an admin. Unlocking now requires a reason (`src/screens/ReportScreen.tsx`), shows it on the report from then on, and a trigger copies it into `audit_log` — a table with a select policy and no insert, update or delete policy at all, so only a `security definer` trigger can write it and nothing can change it. |
 | Daily activity reports (batch PDF, emailed/webhooked) | **Gap** | Needs the server tier. |
@@ -212,7 +212,7 @@ turns out to be wrong has not stamped a permanent accusation onto a QC document.
 | 3 — Mobile Evidence & Camera Annotator | **Partial** | Built since this table was first written: `0010` added arrow, box, circle, freehand and text marks in normalised coordinates, and `0009` burns the time, coordinates and inspector into the pixels. Still missing: a capture-mode toggle, and the TRD's blur and measurement tools. |
 | 4 — Report Generation & Layout Engine | **Partial** | Report preview, a paginated branded PDF, spreadsheet export and a read-only share link all exist; no preset switcher and no email — QC2GO produces the file and the link, the sender delivers them. |
 | 5 — Mobile AI Walkthrough & Session Summary | **Gap** | — |
-| 6 — Tasks, Punch Lists & Work Order Center | **Gap** | `CompletedScreen` is the nearest thing — a searchable history of finished inspections — but it is a record, not a queue. |
+| 6 — Tasks, Punch Lists & Work Order Center | **Built** | `TasksScreen` is the centre: every open work order across every customer, filterable by state, assignable and datable in place, with the history of who moved it. `PunchListScreen` remains the per-customer view and is where an order is raised. Missing from the blueprint: a calendar view and drag-between-columns, both of which want a screen wider than a phone. |
 
 QC2GO also ships three screens the TRD never describes, all of which came from
 the actual job rather than from the spec: **customer-first navigation** (the top
@@ -745,3 +745,54 @@ cropped for the same reason: the defect is not reliably in the middle of the
 frame. The smoke test downloads the file, inflates its streams and asserts the
 words on the page, because nothing in the layout checks proves pdf-lib draws
 anything at all; the PDF is kept beside the screenshots as a CI artifact.
+
+**`0014_tasks.sql` — who is actually doing it.** Item 13 of the roadmap above,
+and the thing the punch list was always one field short of. The punch list could
+say what was still open on a customer; it could not say whose job it was, which
+is the question a supervisor has on a Monday morning.
+
+Six states is more than a small crew needs to describe a piece of work, and two
+of them are the reason to have it at all: **`done` is the claim that the work is
+finished and `verified` is somebody having looked.** So `verified` is reachable
+only from `done`. A board where a task can jump straight to Verified has one
+state wearing two names, and a QC app that ships that has quietly deleted its
+own subject.
+
+The same reasoning makes `assigned` and everything past it refuse to happen
+without an assignee. A board filling up with work nobody owns is precisely the
+failure this feature exists to fix, and it would have been reproduced inside the
+fix.
+
+**The correction is recorded in one place, not two.** A task raised from a
+failed checkpoint does not store whether the deficiency was fixed — that has
+always lived in the customer's `punchResolutions`, where the punch list reads
+it, and `effectiveState` reads it back. Verifying such a task writes the
+resolution rather than a task state. Two records both claiming to know whether a
+deficiency was corrected is a disagreement waiting to happen, and the one that
+would be believed is whichever screen somebody had open. The smoke test asserts
+the pair directly: correcting the item on the punch screen closes its work order
+without anybody having touched the board.
+
+Three smaller decisions, each of which would have been found by a user rather
+than by us:
+
+1. **The assignee is a suggestion, not a closed list.** It was a `<select>` over
+   the admin-maintained roster, which is empty on a company that has not filled
+   it in — and since nothing moves off New without a name on it, the entire
+   board would have been frozen with nothing on screen explaining why. The same
+   shape of failure as a circuit breaker that never opens for a small
+   deployment. Found by the smoke test, which could not assign anybody.
+2. **A due date is a day, not a moment.** Run through a timestamp it becomes
+   midnight somewhere and reads as overdue an afternoon early for everybody west
+   of it. It is a `date` in Postgres and a `YYYY-MM-DD` string on the device,
+   compared as text.
+3. **One live work order per deficiency**, enforced by a partial unique index
+   scoped to the company — two rows that close each other would both look
+   correct on the board. Archiving one releases the deficiency, or a task raised
+   by mistake would make that checkpoint permanently unassignable.
+
+Self-verification — the same account marking a task done and then verifying it —
+is **recorded and shown, not blocked**. A rule demanding a second account would
+deadlock a two-person company, and a rule that cannot be followed gets worked
+around rather than followed. It is the same choice the pencil-whipping checks
+make, for the same reason.

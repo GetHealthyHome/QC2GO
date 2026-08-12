@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useStore } from '../lib/store';
-import { CameraIcon, TrashIcon, XIcon } from './Icons';
+import { CameraIcon, PenIcon, TrashIcon, XIcon } from './Icons';
 import { cx } from './ui';
+import { AnnotatedPhoto } from './AnnotatedPhoto';
+import { PhotoAnnotator } from './PhotoAnnotator';
+import type { Annotation } from '../lib/annotate';
 
 /**
  * Resolves a stored photo id to an object URL and revokes it when it goes away.
@@ -12,12 +15,28 @@ import { cx } from './ui';
  * rather than the whole report failing to render.
  */
 export function usePhotoUrl(photoId: string | null): string | null {
-  const { getPhoto } = useStore();
-  const [url, setUrl] = useState<string | null>(null);
+  return usePhoto(photoId).url;
+}
+
+/**
+ * The photo's bytes and its marks together.
+ *
+ * Both are needed almost everywhere one is: a thumbnail, the viewer and the
+ * report all draw the annotations over the image, and fetching them separately
+ * would let a photo render for a frame with its arrows missing.
+ */
+export function usePhoto(photoId: string | null): {
+  url: string | null;
+  annotations?: Annotation[];
+} {
+  const { getPhoto, inspections } = useStore();
+  const [state, setState] = useState<{ url: string | null; annotations?: Annotation[] }>({
+    url: null,
+  });
 
   useEffect(() => {
     if (!photoId) {
-      setUrl(null);
+      setState({ url: null });
       return;
     }
     let objectUrl: string | null = null;
@@ -25,16 +44,18 @@ export function usePhotoUrl(photoId: string | null): string | null {
     void getPhoto(photoId).then((photo) => {
       if (cancelled || !photo?.blob) return;
       objectUrl = URL.createObjectURL(photo.blob);
-      setUrl(objectUrl);
+      setState({ url: objectUrl, annotations: photo.annotations });
     });
     return () => {
       cancelled = true;
       if (objectUrl) URL.revokeObjectURL(objectUrl);
-      setUrl(null);
+      setState({ url: null });
     };
-  }, [photoId, getPhoto]);
+    // `inspections` is not read here — it is the signal that a save happened,
+    // since photos live in IndexedDB rather than in React state.
+  }, [photoId, getPhoto, inspections]);
 
-  return url;
+  return state;
 }
 
 export function PhotoThumb({
@@ -48,7 +69,7 @@ export function PhotoThumb({
   onRemove?: () => void;
   size?: 'sm' | 'md';
 }) {
-  const url = usePhotoUrl(photoId);
+  const { url, annotations } = usePhoto(photoId);
   const box = size === 'sm' ? 'size-16' : 'size-20';
 
   return (
@@ -63,7 +84,7 @@ export function PhotoThumb({
         aria-label="View photo"
       >
         {url ? (
-          <img src={url} alt="" className="size-full object-cover" />
+          <AnnotatedPhoto src={url} annotations={annotations} className="size-full" aspect={1} />
         ) : (
           <span className="block size-full animate-pulse bg-ink-200" />
         )}
@@ -82,16 +103,41 @@ export function PhotoThumb({
   );
 }
 
-export function PhotoViewer({ photoId, onClose }: { photoId: string; onClose: () => void }) {
-  const url = usePhotoUrl(photoId);
+export function PhotoViewer({
+  photoId,
+  onClose,
+  editable = false,
+}: {
+  photoId: string;
+  onClose: () => void;
+  /** Offers the annotator. Off on a signed report, where nothing may change. */
+  editable?: boolean;
+}) {
+  const { url, annotations } = usePhoto(photoId);
+  const { savePhotoAnnotations } = useStore();
+  const [annotating, setAnnotating] = useState(false);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape' && !annotating) onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, annotating]);
+
+  if (annotating) {
+    return (
+      <PhotoAnnotator
+        photoId={photoId}
+        annotations={annotations ?? []}
+        onClose={() => setAnnotating(false)}
+        onSave={(next) => {
+          void savePhotoAnnotations(photoId, next);
+          setAnnotating(false);
+        }}
+      />
+    );
+  }
 
   return (
     <div
@@ -109,7 +155,29 @@ export function PhotoViewer({ photoId, onClose }: { photoId: string; onClose: ()
       >
         <XIcon className="size-6" />
       </button>
-      {url ? <img src={url} alt="" className="max-h-full max-w-full object-contain" /> : null}
+
+      {url ? (
+        <AnnotatedPhoto
+          src={url}
+          annotations={annotations}
+          className="max-h-full max-w-full"
+          aspect={4 / 3}
+        />
+      ) : null}
+
+      {editable ? (
+        <button
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            setAnnotating(true);
+          }}
+          className="safe-pb absolute bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full bg-white px-5 py-3 text-[14px] font-bold text-ink-900"
+        >
+          <PenIcon className="size-4" />
+          {annotations?.length ? 'Edit marks' : 'Mark up'}
+        </button>
+      ) : null}
     </div>
   );
 }

@@ -276,7 +276,7 @@ export function ReviewScreen() {
       </div>
 
       {viewingPhoto ? (
-        <PhotoViewer photoId={viewingPhoto} onClose={() => setViewingPhoto(null)} />
+        <PhotoViewer photoId={viewingPhoto} onClose={() => setViewingPhoto(null)} editable />
       ) : null}
     </>
   );

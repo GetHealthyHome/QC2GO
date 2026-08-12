@@ -32,7 +32,7 @@ reported. It is not yet the platform around that slice.
 | TRD Module | Coverage | One-line read |
 | --- | :---: | --- |
 | 1 — Template Builder & Field Types | **~40%** | Full section/checkpoint authoring with versioned snapshots; 3 question types against the TRD's 15+, and no conditional logic, repeatable sections, or formulas. |
-| 2 — Evidence Capture & Media | **~35%** | Photos captured, downscaled, stored offline and rendered into the report. No annotation, no watermarking, no video/audio, no barcode, no AI. |
+| 2 — Evidence Capture & Media | **~50%** | Photos captured, downscaled, stored offline and rendered into the report. No annotation, no watermarking, no video/audio, no barcode, no AI. |
 | 3 — KYPiT Verification | **~15%** | Nothing of the risk engine exists. GPS is captured on the customer record, not on the evidence. |
 | 4 — Scoring, Workflows & Automation | **~40%** | A real scoring model with critical-failure override and hard sign-off blockers. No tasks, no punch list, no approval chain, no triage queue. |
 | 5 — Teams, Security & Access | **~60%** | Supabase auth, per-company tenancy with three roles, row-level security proven by an isolation suite, invitation-based onboarding, tombstoned deletes. No second (team) role layer, no external sharing, no SSO, no audit ledger. |
@@ -113,7 +113,7 @@ two-layer org/team hierarchy does not yet — there is one layer, of three roles
 | In-app camera capture | **Partial** | OS camera via file input (`src/components/Photos.tsx:121`), multi-select, rear camera on phones, file picker on desktop. |
 | Locked capture ratios / orientations | **Gap** | Needs a real in-app viewfinder. |
 | Media quality tiers (4 image, 4 video) | **Gap** | One fixed tier: 1600px long edge, JPEG q0.82 (`src/lib/image.ts`). Sensible for 30+ photos on-device, but not configurable, and there is no "ultra high quality" path for a disputed defect photo. |
-| Image annotation — crop, rotate, annotate, text, highlight, freehand | **Gap** | **Zero of the six tools.** A deficiency photo goes into the report exactly as shot, with the written explanation as the only pointer to what is wrong. Highest-value gap in this module: it is pure client-side canvas work, needs no backend, and directly improves the customer-facing report. |
+| Image annotation — crop, rotate, annotate, text, highlight, freehand | **Partial** | Four of the six: **annotate** (arrow, box), **freehand**, and **text** with three severity colours (`src/components/PhotoAnnotator.tsx`). Stored beside the photo in normalised coordinates rather than burned in, so the evidence is untouched and the same mark lands identically on a phone, in the report and on paper. Crop and rotate are missing, and both are destructive in a way the others are not — worth deciding deliberately rather than adding for completeness. |
 | Metadata watermarking (UTC time, GPS, inspector, inspection ID) | **Built** | See `src/lib/image.ts` and `src/lib/exif.ts`. |
 | Barcode / QR scanning into mapped fields | **Gap** | — |
 | Instacount visual counting | **Gap** | — |
@@ -354,6 +354,17 @@ The two-copy shape is the interesting part, and it comes from this app working
 offline: the reason lands on the inspection so it can be written with no signal
 and read anywhere, and the server keeps its own copy when the change syncs up.
 The first is convenient; the second is the evidence.
+
+**`0010_annotations.sql` — marks on a photo.** Four of the TRD's six annotation
+tools, stored as coordinates beside the photo rather than burned into it. Two
+consequences worth recording: the original evidence is never altered, and the
+same mark renders identically at thumbnail, full screen and print size because
+every coordinate is a fraction of the image rather than a pixel.
+
+Freehand strokes are simplified with Ramer–Douglas–Peucker rather than by
+spacing. Distance thinning throws away half the points of a straight line and
+keeps the other half, all of which say the same nothing; what makes a point worth
+keeping is that the stroke *turns* there.
 
 **`0009_photo_provenance.sql` — photos say where they came from.** This document
 flagged that `compressImage` re-encodes through a canvas and so destroys EXIF,

@@ -11,7 +11,8 @@ import {
   sectionProgress,
 } from '../lib/inspection';
 import type { Answer, Question, Section, SignatureRecord } from '../lib/types';
-import { PhotoViewer, usePhotoUrl } from '../components/Photos';
+import { PhotoViewer, usePhoto } from '../components/Photos';
+import { AnnotatedPhoto } from '../components/AnnotatedPhoto';
 import { Badge, Button, Card, Screen, TopBar, cx } from '../components/ui';
 import { Letterhead } from '../components/Letterhead';
 import { letterheadName } from '../lib/branding';
@@ -297,7 +298,13 @@ export function ReportScreen() {
       </Screen>
 
       {viewingPhoto ? (
-        <PhotoViewer photoId={viewingPhoto} onClose={() => setViewingPhoto(null)} />
+        <PhotoViewer
+          photoId={viewingPhoto}
+          onClose={() => setViewingPhoto(null)}
+          // A signed report is a record. Marking up a photo inside one would
+          // change what a customer was handed without leaving any trace.
+          editable={!completed}
+        />
       ) : null}
     </>
   );
@@ -354,14 +361,16 @@ function AnswerMark({ answer }: { answer: Answer | null }) {
 }
 
 function ReportPhoto({ photoId, onOpen }: { photoId: string; onOpen: () => void }) {
-  const url = usePhotoUrl(photoId);
+  const { url, annotations } = usePhoto(photoId);
   return (
     <button
       type="button"
       onClick={onOpen}
       className="aspect-4/3 overflow-hidden rounded-lg border border-ink-200 bg-ink-100"
     >
-      {url ? <img src={url} alt="" className="size-full object-cover" /> : null}
+      {url ? (
+        <AnnotatedPhoto src={url} annotations={annotations} className="size-full" />
+      ) : null}
     </button>
   );
 }

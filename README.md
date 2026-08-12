@@ -76,6 +76,17 @@ next.
 
 ### Photo evidence
 
+Any photo can be marked up — arrow, box, freehand, or a text label, in one of
+three colours that carry meaning rather than decorate. A photo of a whole
+crawlspace with "rim joist left open at the south wall" underneath asks the
+customer to find it themselves; an arrow does not.
+
+Marks are stored beside the photo as coordinates, never burned into it, so the
+evidence stays exactly as the camera produced it and a mark in the wrong place
+can be moved. They are held as fractions of the image, which is what lets the
+same arrow land in the same place on a phone, in the report, and on paper. Marks
+can be added while an inspection is open and not after it is signed.
+
 Every photo is stamped, in the pixels, with the UTC time it was taken, the
 coordinates if anything could supply them, the inspector and the inspection id.
 Pixels rather than metadata, because metadata does not survive being exported to

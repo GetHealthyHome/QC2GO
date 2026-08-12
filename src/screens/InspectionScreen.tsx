@@ -226,7 +226,7 @@ export function InspectionScreen() {
       </div>
 
       {viewingPhoto ? (
-        <PhotoViewer photoId={viewingPhoto} onClose={() => setViewingPhoto(null)} />
+        <PhotoViewer photoId={viewingPhoto} onClose={() => setViewingPhoto(null)} editable />
       ) : null}
     </>
   );

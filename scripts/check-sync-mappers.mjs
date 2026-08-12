@@ -193,6 +193,9 @@ const photo = {
   gps: { lat: 42.4601, lng: -71.3489 },
   gpsSource: 'exif',
   watermarked: true,
+  // Stated rather than left out: an unmarked photo has to round-trip to
+  // unmarked rather than to an empty array. `deepStrictEqual` tells them apart.
+  annotations: undefined,
   createdAt: '2026-08-11T14:30:00.000Z',
 };
 
@@ -224,6 +227,20 @@ check('a photo the camera told us nothing about stays that way', () => {
   assert.equal(back.gps, undefined);
   assert.equal(back.gpsSource, undefined);
   assert.equal(back.watermarked, undefined, 'not watermarked must not read as watermarked');
+});
+
+check('marks on a photo round trip, and absent stays absent', () => {
+  const marked = {
+    ...photo,
+    annotations: [
+      { id: 'a1', kind: 'arrow', color: 'red', points: [{ x: 0.2, y: 0.3 }, { x: 0.7, y: 0.6 }] },
+    ],
+  };
+  const back = m.rowToPhoto(m.photoToRow(marked, USER, ORG, 'p'));
+  assert.deepEqual(back.annotations, marked.annotations);
+
+  const bare = m.rowToPhoto(m.photoToRow(photo, USER, ORG, 'p'));
+  assert.equal(bare.annotations, undefined);
 });
 
 check('a bucket key starts with the organization', () => {

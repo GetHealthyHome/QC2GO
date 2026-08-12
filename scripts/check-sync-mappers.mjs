@@ -291,8 +291,19 @@ const shared = {
   universalSection: { id: 'universal', title: 'Universal QC Standards', questions: [{ id: 'u1', text: 'Scope matches' }] },
   salespeople: ['Dana Reyes', 'Sam Okafor'],
   teamLeaders: ['Chris Lin'],
+  // Never set, and it must round-trip to exactly that rather than to `false`.
+  requireSecondVerifier: undefined,
   updatedAt: '2026-08-01T00:00:00.000Z',
 };
+
+check('the verification policy round trips, and off stays absent', () => {
+  // A company that never touched the setting must not come back from the
+  // server holding an explicit `false` — that is a different record, and it
+  // would make the round-trip check below fail for everybody who has not.
+  const strict = { ...shared, requireSecondVerifier: true };
+  assert.equal(m.rowToShared(m.sharedToRow(strict, ORG)).requireSecondVerifier, true);
+  assert.equal(m.rowToShared(m.sharedToRow(shared, ORG)).requireSecondVerifier, undefined);
+});
 
 check('shared config round trips, pick lists included', () => {
   const back = m.rowToShared(m.sharedToRow(shared, ORG));
@@ -327,6 +338,79 @@ check('every uploaded row carries the organization', () => {
   assert.equal(m.photoToRow(photo, USER, ORG, 'p').org_id, ORG, 'photo');
   assert.equal(m.templateToRow(template, USER, ORG).org_id, ORG, 'template');
   assert.equal(m.sharedToRow(shared, ORG).org_id, ORG, 'shared config');
+});
+
+// ---------------------------------------------------------------------------
+// Tasks
+// ---------------------------------------------------------------------------
+
+const task = {
+  id: 'task-1',
+  customerId: 'cust-1',
+  inspectionId: 'insp-1',
+  punchKey: 'insp-1:q7',
+  title: 'Rim joist sealed at the south wall',
+  detail: 'Left open behind the ductwork.',
+  state: 'in-progress',
+  assignee: 'Chris Lin',
+  critical: true,
+  dueDate: '2026-08-20',
+  history: [
+    { at: '2026-08-12T09:00:00.000Z', to: 'new', by: 'sup@co.com' },
+    { at: '2026-08-12T10:00:00.000Z', to: 'assigned', by: 'sup@co.com', note: 'Chris is back Tuesday' },
+  ],
+  archived: false,
+  createdBy: USER,
+  createdAt: '2026-08-12T09:00:00.000Z',
+  updatedAt: '2026-08-12T10:00:00.000Z',
+};
+
+check('a task carries the organization like every other uploaded row', () => {
+  assert.equal(m.taskToRow(task, USER, ORG).org_id, ORG);
+});
+
+check('a task round trips', () => {
+  assert.deepEqual(m.rowToTask(m.taskToRow(task, USER, ORG)), task);
+});
+
+check('THE LINK, NOT A COPY: punch_key survives so the deficiency stays tied', () => {
+  // Without it the task is an orphan sentence about a job, and the punch item
+  // it was raised for goes back to looking unassigned.
+  assert.equal(m.taskToRow(task, USER, ORG).punch_key, 'insp-1:q7');
+});
+
+check('the history round trips as a list, never flattened to its last entry', () => {
+  // The history is the whole answer to "who moved this and when". A mapper that
+  // kept only the latest would turn the lifecycle back into a status field.
+  const back = m.rowToTask(m.taskToRow(task, USER, ORG));
+  assert.equal(back.history.length, 2);
+  assert.equal(back.history[1].note, 'Chris is back Tuesday');
+});
+
+check('a standalone work order keeps its empty links empty', () => {
+  const standalone = {
+    ...task,
+    inspectionId: undefined,
+    punchKey: undefined,
+    detail: undefined,
+    assignee: undefined,
+    dueDate: undefined,
+    critical: undefined,
+    state: 'new',
+    history: [{ at: '2026-08-12T09:00:00.000Z', to: 'new' }],
+  };
+  assert.deepEqual(m.rowToTask(m.taskToRow(standalone, USER, ORG)), standalone);
+});
+
+check('a row with no history at all becomes an empty list, not undefined', () => {
+  // Every reader appends to this. `undefined` would throw on the first move.
+  const back = m.rowToTask({ id: 't', customer_id: 'c', title: 'x', state: 'new', history: null });
+  assert.deepEqual(back.history, []);
+});
+
+check('an unreadable state falls back to New rather than to nothing', () => {
+  const back = m.rowToTask({ id: 't', customer_id: 'c', title: 'x', state: null, history: [] });
+  assert.equal(back.state, 'new');
 });
 
 // ---------------------------------------------------------------------------

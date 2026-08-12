@@ -22,6 +22,7 @@ import {
   photosRepo,
   sharedRepo,
   syncRepo,
+  tasksRepo,
   templatesRepo,
 } from './db';
 import { supabase } from './supabase';
@@ -33,9 +34,11 @@ import {
   rowToInspection,
   rowToPhoto,
   rowToShared,
+  rowToTask,
   rowToTemplate,
   sharedToRow,
   storagePathFor,
+  taskToRow,
   templateToRow,
   type Row,
 } from './syncMap';
@@ -292,11 +295,12 @@ export async function runSync(): Promise<void> {
  * server refuses template writes from anyone else.
  */
 async function adoptLocalData(state: SyncState): Promise<void> {
-  const [customers, inspections, photos, templates] = await Promise.all([
+  const [customers, inspections, photos, templates, tasks] = await Promise.all([
     customersRepo.all(),
     inspectionsRepo.all(),
     photosRepo.all(),
     templatesRepo.all(),
+    tasksRepo.all(),
   ]);
 
   // Read the outbox once. A device coming back from a fortnight of field work
@@ -313,6 +317,7 @@ async function adoptLocalData(state: SyncState): Promise<void> {
   };
 
   for (const customer of customers) await adopt('customer', customer.id);
+  for (const task of tasks) await adopt('task', task.id);
   for (const inspection of inspections) await adopt('inspection', inspection.id);
   for (const photo of photos) {
     // Only ours to upload if the bytes are still here.
@@ -434,6 +439,12 @@ async function pushOne(entry: OutboxEntry): Promise<PushError | null> {
         .upsert(templateToRow(template, userId, orgId), { onConflict: 'org_id,id' });
       return classify(error);
     }
+    case 'task': {
+      const task = await tasksRepo.get(entry.recordId);
+      if (!task) return null;
+      const { error } = await client.from('tasks').upsert(taskToRow(task, userId, orgId));
+      return classify(error);
+    }
     case 'shared': {
       if (!context!.isAdmin) return null;
       const shared = await sharedRepo.get();
@@ -481,6 +492,8 @@ function tableFor(entity: SyncEntity): string | null {
       return 'photos';
     case 'template':
       return 'templates';
+    case 'task':
+      return 'tasks';
     default:
       return null;
   }
@@ -505,11 +518,12 @@ async function pull(): Promise<boolean> {
   // A record with an unsent local change is not overwritten by the server copy.
   const pendingIds = new Set((await outboxRepo.all()).map((entry) => entry.id));
 
-  const [customers, inspections, photos, templates, tombstones] = await Promise.all([
+  const [customers, inspections, photos, templates, tasks, tombstones] = await Promise.all([
     fetchSince('customers', 'updated_at', marks.customers),
     fetchSince('inspections', 'updated_at', marks.inspections),
     fetchSince('photos', 'created_at', marks.photos),
     fetchSince('templates', 'updated_at', marks.templates),
+    fetchSince('tasks', 'updated_at', marks.tasks),
     fetchSince('tombstones', 'deleted_at', marks.tombstones),
   ]);
 
@@ -567,6 +581,16 @@ async function pull(): Promise<boolean> {
     const local = localTemplates.get(remote.id);
     if (local && (local.updatedAt ?? '') >= (remote.updatedAt ?? '')) continue;
     await templatesRepo.put(remote);
+    changed = true;
+  }
+
+  for (const row of tasks) {
+    advance('tasks', row.updated_at);
+    const remote = rowToTask(row);
+    if (pendingIds.has(`task:${remote.id}`)) continue;
+    const local = await tasksRepo.get(remote.id);
+    if (local && local.updatedAt >= remote.updatedAt) continue;
+    await tasksRepo.put(remote);
     changed = true;
   }
 
@@ -637,6 +661,13 @@ async function applyTombstone(row: Row, pendingIds: Set<string>): Promise<boolea
     case 'template': {
       if (pendingIds.has(`template:${id}`)) return false;
       await templatesRepo.remove(id);
+      return true;
+    }
+    case 'task': {
+      if (pendingIds.has(`task:${id}`)) return false;
+      const local = await tasksRepo.get(id);
+      if (!local || local.updatedAt > deletedAt) return false;
+      await tasksRepo.remove(id);
       return true;
     }
     default:

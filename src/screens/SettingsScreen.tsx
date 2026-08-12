@@ -221,6 +221,41 @@ export function SettingsScreen() {
         {isAdmin ? (
           <>
             <h2 className="mt-8 mb-2.5 px-1 text-[13px] font-bold tracking-wide text-ink-500 uppercase">
+              Work orders
+            </h2>
+            <Card className="p-4">
+              <label className="flex items-start gap-3">
+                <input
+                  type="checkbox"
+                  checked={shared.requireSecondVerifier === true}
+                  onChange={(event) =>
+                    void saveShared({ ...shared, requireSecondVerifier: event.target.checked || undefined })
+                  }
+                  className="mt-0.5 size-5 shrink-0 rounded accent-brand-600"
+                />
+                <span className="min-w-0">
+                  <span className="block text-[14px] font-semibold text-ink-900">
+                    Somebody else has to verify
+                  </span>
+                  <span className="mt-0.5 block text-[13px] leading-relaxed text-ink-500">
+                    A work order marked done by one account can only be verified by another —
+                    a second pair of eyes on every correction. Leave it off and the same person
+                    can do both; the app still records that they did, and says so on the task.
+                  </span>
+                  {/*
+                    * Said plainly rather than discovered. A one-person company
+                    * that turns this on has locked its own board, and the fix
+                    * is not obvious from the refusal message alone.
+                    */}
+                  <span className="mt-1.5 block text-[12px] leading-relaxed text-ink-400">
+                    Only applies where people sign in, and only where the company has more than
+                    one account — with nobody else to ask, work orders would stop at Done.
+                  </span>
+                </span>
+              </label>
+            </Card>
+
+            <h2 className="mt-8 mb-2.5 px-1 text-[13px] font-bold tracking-wide text-ink-500 uppercase">
               Name lists
             </h2>
             <p className="mb-2.5 px-1 text-[13px] text-ink-500">

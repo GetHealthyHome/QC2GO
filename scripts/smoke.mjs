@@ -2,6 +2,7 @@
 // deficiency, signs off, and verifies everything survives a hard reload.
 // Usage: npm run build && npm run preview &  then  node scripts/smoke.mjs
 import { chromium } from 'playwright';
+import { PDFDocument } from 'pdf-lib';
 import zlib from 'node:zlib';
 import fs from 'node:fs';
 
@@ -503,6 +504,58 @@ check('the failed checkpoint appears as an open punch item', punchText.includes(
   JSON.stringify(punchText.slice(0, 140)));
 check('its explanation came with it', punchText.includes('Concord building department'));
 
+// --- putting somebody's name on a deficiency ---
+//
+// The lifecycle rules are asserted in `check:tasks`. What only a browser can
+// show is that raising a task from a punch item ties the two together — and
+// above all that closing it in one place closes it in the other, because a
+// deficiency that reads as corrected on one screen and open on another is the
+// failure that makes people stop believing both.
+console.log('--- work orders ---');
+await page.getByRole('button', { name: /Raise a work order/ }).first().click();
+await page.waitForTimeout(400);
+check(
+  'a raised work order shows on the punch item, owned by nobody',
+  /nobody yet/i.test(await page.locator('body').innerText()),
+);
+
+await page.goto(BASE + '/#/tasks', { waitUntil: 'networkidle' });
+await page.waitForTimeout(500);
+const board = await page.locator('body').innerText();
+check('the work order reached the board', board.includes('Permit'), JSON.stringify(board.slice(0, 200)));
+// Uppercased by CSS on the card, and innerText reports what is rendered.
+check('and carries the customer it belongs to', /dana whitfield/i.test(board));
+check(
+  'an unowned task offers no way forward until it has a name on it',
+  /give this task to somebody/i.test(board),
+  JSON.stringify(board.slice(0, 400)),
+);
+// This checkpoint carries no guidance line on the shipped checklist, so there
+// is nothing to inherit — and the board asks for it rather than leaving a
+// verifier to work out the standard for themselves. (The inheriting case is
+// covered in `check:tasks`, where a checkpoint with `help` can be constructed.)
+check(
+  'a task with nothing to verify against asks somebody to say what to check',
+  /say what to check before verifying/i.test(board),
+  JSON.stringify(board.slice(0, 500)),
+);
+
+// Typed rather than picked: the roster pick list is empty on a company that
+// has not filled it in, and a board nobody can assign anybody on is frozen.
+await page.getByLabel('Assigned to').first().fill('M. Okafor');
+await page.waitForTimeout(600);
+const owned = await page.locator('body').innerText();
+check('assigning it opens up the lifecycle', /assigned/i.test(owned));
+check(
+  'THE POINT OF SIX STATES: it cannot be verified before anybody says it is done',
+  !(await page.getByRole('button', { name: /^Verified$/ }).count()),
+  'Verified was offered straight from New',
+);
+await shot('15c2-work-order', true);
+
+await page.goto(customerUrl + '/punch', { waitUntil: 'networkidle' });
+await page.waitForTimeout(400);
+
 await withDialogs(['Permit pulled and posted on site'], () =>
   page.getByRole('button', { name: /Mark corrected/ }).first().click(),
 );
@@ -511,6 +564,24 @@ check('marking it corrected empties the open list', /nothing outstanding/i.test(
 check('the correction note is kept', afterClose.includes('Permit pulled and posted on site')
   || /corrected \(1\)/i.test(afterClose));
 await shot('15c-punch-list', true);
+
+// THE TWO TRUTHS: the board has to agree, without anybody having touched it.
+await page.goto(BASE + '/#/tasks', { waitUntil: 'networkidle' });
+await page.waitForTimeout(500);
+check(
+  'correcting the deficiency closed its work order too',
+  !/permit/i.test(await page.locator('body').innerText()),
+  'the board still shows an open work order for a corrected deficiency',
+);
+await page.getByRole('button', { name: /^All \(/ }).click();
+await page.waitForTimeout(300);
+check(
+  'and it reads as verified rather than having vanished',
+  /verified/i.test(await page.locator('body').innerText()),
+);
+
+await page.goto(customerUrl + '/punch', { waitUntil: 'networkidle' });
+await page.waitForTimeout(400);
 
 // Closing a punch item must not touch the inspection that raised it — a signed
 // inspection is a record, and this is the change most likely to erode that.
@@ -579,6 +650,114 @@ const headerFields = fieldCount(lines[0]);
 const ragged = lines.filter((line) => fieldCount(line) !== headerFields);
 check('every row has the same shape as the header', ragged.length === 0, `${ragged.length} ragged rows`);
 await shot('15d-export');
+
+// --- the customer deliverable is a file, not the print dialog ---
+//
+// `check:pdf-layout` proves where the blocks go; nothing there proves pdf-lib
+// draws anything, that the fonts embed, or that a photo taken by the camera
+// survives being flattened and embedded. That only happens in a browser.
+console.log('--- the report PDF ---');
+await page.goto(inspectionUrl + '/report', { waitUntil: 'networkidle' });
+await page.waitForTimeout(400);
+
+async function grabPdf() {
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: /Download PDF/ }).click(),
+  ]);
+  const bytes = fs.readFileSync(await download.path());
+  // Kept beside the screenshots: when a layout check fails on CI, the file
+  // itself is the only thing that shows what actually went wrong.
+  fs.writeFileSync(`${OUT}/${download.suggestedFilename()}`, bytes);
+  return {
+    name: download.suggestedFilename(),
+    bytes,
+    raw: bytes.toString('latin1'),
+    doc: await PDFDocument.load(bytes),
+    get text() {
+      return pdfStreamText(bytes);
+    },
+  };
+}
+
+/**
+ * What the pages actually say.
+ *
+ * A PDF's objects and content streams are Flate-compressed, so grepping the
+ * file for a serial number finds nothing whether or not it was drawn — which
+ * would make a "the text is there" check pass on an empty document. Inflating
+ * every stream first is the difference between asserting on the report and
+ * asserting on the file header.
+ */
+function pdfStreamText(buffer) {
+  const marker = Buffer.from('stream');
+  const end = Buffer.from('endstream');
+  const parts = [];
+  let at = 0;
+  while (at < buffer.length) {
+    const start = buffer.indexOf(marker, at);
+    if (start === -1) break;
+    let from = start + marker.length;
+    if (buffer[from] === 0x0d) from += 1;
+    if (buffer[from] === 0x0a) from += 1;
+    const stop = buffer.indexOf(end, from);
+    if (stop === -1) break;
+    try {
+      parts.push(zlib.inflateSync(buffer.subarray(from, stop)).toString('latin1'));
+    } catch {
+      parts.push(buffer.subarray(from, stop).toString('latin1'));
+    }
+    at = stop + end.length;
+  }
+  // pdf-lib writes every string as hex — `<514332474F> Tj` rather than
+  // `(QC2GO) Tj` — so the drawn words are not searchable until they are
+  // decoded back to bytes.
+  return parts
+    .join('\n')
+    .replace(/<([0-9A-Fa-f]+)>\s*Tj/g, (_, hex) => Buffer.from(hex, 'hex').toString('latin1'));
+}
+
+const report = await grabPdf();
+const { bytes: pdfBytes, raw: pdfRaw, text: pdfText } = report;
+
+check(
+  'the report downloads as a PDF',
+  pdfBytes.subarray(0, 5).toString('latin1') === '%PDF-',
+  JSON.stringify(pdfBytes.subarray(0, 16).toString('latin1')),
+);
+// A truncated PDF opens as a blank page in some readers and not at all in
+// others, which is the kind of thing a customer reports and nobody can
+// reproduce.
+check(
+  'the file is not truncated',
+  pdfRaw.slice(-2048).includes('%%EOF'),
+  `${pdfBytes.length} bytes`,
+);
+const pdfPages = report.doc.getPageCount();
+check('it has at least one page', pdfPages >= 1, `${pdfPages} pages`);
+check(
+  'the file is named after the customer',
+  report.name.startsWith('dana-whitfield'),
+  report.name,
+);
+// The photos are the bulk of a report, and a build that quietly embedded none
+// of them still produces a valid, plausible-looking file.
+check(
+  'the evidence photos are embedded',
+  pdfRaw.includes('/DCTDecode'),
+  `${pdfBytes.length} bytes, ${pdfPages} pages`,
+);
+check(
+  'a serial number reached the page',
+  pdfText.includes(SERIALS[0]),
+  'the monospaced serial block is missing from the PDF',
+);
+check(
+  'the words on the page are the report',
+  pdfText.includes('Dana Whitfield') && pdfText.includes('SIGNATURES'),
+  'the customer name or the signature block is missing',
+);
+await shot('15e-pdf');
 
 // --- reopening a signed record demands a reason and keeps it ---
 //
@@ -800,6 +979,16 @@ check(
   JSON.stringify(atticReport.slice(0, 300)),
 );
 await shot('29-condition-report', true);
+
+// The same audit property has to hold in the file the customer keeps, not only
+// on the screen the inspector is looking at.
+const atticPdf = await grabPdf();
+check(
+  'the PDF also states what was not applicable',
+  atticPdf.text.includes('NOT APPLICABLE TO THIS JOB') &&
+    atticPdf.text.includes(ROUTER),
+  'a conditional block vanished from the deliverable instead of being explained',
+);
 
 // --- record checks: does this look like it was actually walked? ---
 //

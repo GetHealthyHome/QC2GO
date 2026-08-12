@@ -5,6 +5,7 @@ import { SignInScreen } from './screens/SignInScreen';
 import { NoOrganizationScreen } from './screens/NoOrganizationScreen';
 import { SetPasswordScreen } from './screens/SetPasswordScreen';
 import { PeopleScreen } from './screens/PeopleScreen';
+import { TasksScreen } from './screens/TasksScreen';
 import { PunchListScreen } from './screens/PunchListScreen';
 import { IntegrationsScreen } from './screens/IntegrationsScreen';
 import { SharedReportScreen } from './screens/SharedReportScreen';
@@ -101,6 +102,7 @@ export default function App() {
         <Route path="/inspections/:inspectionId" element={<InspectionScreen />} />
         <Route path="/inspections/:inspectionId/review" element={<ReviewScreen />} />
         <Route path="/inspections/:inspectionId/report" element={<ReportScreen />} />
+        <Route path="/tasks" element={<TasksScreen />} />
         <Route path="/completed" element={<CompletedScreen />} />
         <Route path="/checklists" element={<ChecklistsScreen />} />
         <Route path="/checklists/shared" element={<SharedEditorScreen />} />

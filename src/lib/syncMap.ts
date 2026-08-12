@@ -16,6 +16,8 @@ import type {
   Response,
   SharedConfig,
   SignatureRecord,
+  Task,
+  TaskEvent,
   Template,
   VisitType,
 } from './types';
@@ -110,6 +112,63 @@ export function rowToCustomer(row: Row): Customer {
     templateIds: stringArray(row.template_ids),
     punchResolutions: resolutionMap(row.punch_resolutions),
     location: (row.location as GeoPoint | null) ?? undefined,
+    archived: row.archived === true,
+    createdBy: optionalText(row.created_by),
+    createdAt: iso(row.created_at, now),
+    updatedAt: iso(row.updated_at, now),
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Tasks
+// ---------------------------------------------------------------------------
+
+/**
+ * The history is the answer to "who moved this and when", so it round-trips as
+ * a list rather than being flattened to the latest entry. A row that arrives
+ * without one is given an empty list, never `undefined` — every reader appends
+ * to it.
+ */
+function taskHistory(value: unknown): TaskEvent[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((entry): entry is TaskEvent => !!entry && typeof entry === 'object');
+}
+
+export function taskToRow(task: Task, userId: string, orgId: string): Row {
+  return {
+    id: task.id,
+    org_id: orgId,
+    customer_id: task.customerId,
+    inspection_id: task.inspectionId ?? null,
+    punch_key: task.punchKey ?? null,
+    title: task.title,
+    detail: task.detail ?? null,
+    state: task.state,
+    assignee: task.assignee ?? null,
+    critical: task.critical ?? false,
+    due_date: task.dueDate ?? null,
+    history: task.history,
+    archived: task.archived ?? false,
+    created_by: task.createdBy ?? userId,
+    created_at: task.createdAt,
+    updated_at: task.updatedAt,
+  };
+}
+
+export function rowToTask(row: Row): Task {
+  const now = new Date().toISOString();
+  return {
+    id: text(row.id),
+    customerId: text(row.customer_id),
+    inspectionId: optionalText(row.inspection_id),
+    punchKey: optionalText(row.punch_key),
+    title: text(row.title),
+    detail: optionalText(row.detail),
+    state: (text(row.state) || 'new') as Task['state'],
+    assignee: optionalText(row.assignee),
+    critical: row.critical === true ? true : undefined,
+    dueDate: optionalText(row.due_date),
+    history: taskHistory(row.history),
     archived: row.archived === true,
     createdBy: optionalText(row.created_by),
     createdAt: iso(row.created_at, now),
@@ -290,6 +349,7 @@ export function sharedToRow(shared: SharedConfig, orgId: string): Row {
     universal_section: shared.universalSection,
     salespeople: shared.salespeople,
     team_leaders: shared.teamLeaders,
+    require_second_verifier: shared.requireSecondVerifier ?? false,
     updated_at: shared.updatedAt,
   };
 }
@@ -303,6 +363,9 @@ export function rowToShared(row: Row): SharedConfig {
       questions: [],
     },
     salespeople: stringArray(row.salespeople),
+    // Absent stays absent rather than becoming `false`: the field is optional
+    // on the device and a company that never set it should round-trip unchanged.
+    requireSecondVerifier: row.require_second_verifier === true ? true : undefined,
     teamLeaders: stringArray(row.team_leaders),
     updatedAt: iso(row.updated_at, new Date().toISOString()),
   };

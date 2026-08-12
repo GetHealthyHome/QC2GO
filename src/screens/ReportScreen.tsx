@@ -28,10 +28,11 @@ export function ReportScreen() {
   const { inspectionId } = useParams();
   const inspection = useInspection(inspectionId);
   const customer = useCustomer(inspection?.customerId);
-  const { updateInspection, settings, isAdmin } = useStore();
+  const { updateInspection, settings, isAdmin, getPhoto } = useStore();
   const auth = useAuth();
   const profile = auth.profile;
   const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
+  const [pdfState, setPdfState] = useState<'idle' | 'building' | 'failed'>('idle');
 
   const checklist = useChecklist(inspection);
   const sections = useMemo(() => checklist?.sections ?? [], [checklist]);
@@ -63,6 +64,33 @@ export function ReportScreen() {
       `${(customer?.customerName ?? 'inspection').replace(/[^\w-]+/g, '-')}-${inspection.id}.json`,
       new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }),
     );
+  }
+
+  /**
+   * The customer deliverable.
+   *
+   * pdf-lib is a large dependency for an app that has to install over a phone
+   * connection, so it is fetched only when somebody asks for a file — and then
+   * cached with the rest of the build, so the next tap works in a crawlspace.
+   */
+  async function downloadPdf() {
+    if (!inspection || !checklist || pdfState === 'building') return;
+    setPdfState('building');
+    try {
+      const { downloadReportPdf } = await import('../lib/pdf');
+      await downloadReportPdf({
+        inspection,
+        checklist,
+        customer,
+        companyName: letterheadName(profile?.organization?.name, settings.companyName),
+        logo: profile?.organization?.logo ?? undefined,
+        getPhoto,
+      });
+      setPdfState('idle');
+    } catch {
+      // Printing still works, and saying so is more use than an error code.
+      setPdfState('failed');
+    }
   }
 
   /**
@@ -332,9 +360,19 @@ export function ReportScreen() {
         {completed && auth.enabled ? <ShareLinks inspectionId={inspection.id} /> : null}
 
         <div className="mt-6 flex flex-col gap-2 no-print">
-          <Button variant="secondary" block onClick={() => window.print()}>
+          <Button variant="secondary" block onClick={downloadPdf} disabled={pdfState === 'building'}>
             <PrinterIcon className="size-5" />
-            Print / save as PDF
+            {pdfState === 'building' ? 'Building the PDF…' : 'Download PDF'}
+          </Button>
+          {pdfState === 'failed' ? (
+            <p className="flex items-start gap-1.5 rounded-xl bg-fail-50 px-3 py-2.5 text-[13px] font-medium text-fail-700">
+              <AlertIcon className="mt-0.5 size-4 shrink-0" />
+              <span>The PDF could not be built on this device. Printing still works.</span>
+            </p>
+          ) : null}
+          <Button variant="ghost" block onClick={() => window.print()}>
+            <PrinterIcon className="size-5" />
+            Print
           </Button>
           <Button variant="secondary" block onClick={exportJson}>
             <ShareIcon className="size-5" />

@@ -6,6 +6,7 @@ import type {
   Settings,
   SharedConfig,
   SyncState,
+  Task,
   Template,
 } from './types';
 
@@ -17,7 +18,7 @@ import type {
  * here and pushes; it never sits in front of a save.
  */
 const DB_NAME = 'qc2go';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 export const STORES = {
   customers: 'customers',
@@ -25,6 +26,7 @@ export const STORES = {
   photos: 'photos',
   settings: 'settings',
   templates: 'templates',
+  tasks: 'tasks',
   outbox: 'outbox',
 } as const;
 
@@ -54,6 +56,10 @@ function openDb(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORES.templates)) {
         db.createObjectStore(STORES.templates, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(STORES.tasks)) {
+        const store = db.createObjectStore(STORES.tasks, { keyPath: 'id' });
+        store.createIndex('customerId', 'customerId', { unique: false });
       }
       if (!db.objectStoreNames.contains(STORES.outbox)) {
         db.createObjectStore(STORES.outbox, { keyPath: 'id' });
@@ -163,6 +169,14 @@ export const templatesRepo = {
   remove: (id: string) => tx(STORES.templates, 'readwrite', (s) => s.delete(id)),
 };
 
+export const tasksRepo = {
+  all: () => tx<Task[]>(STORES.tasks, 'readonly', (s) => s.getAll()),
+  get: (id: string) => tx<Task | undefined>(STORES.tasks, 'readonly', (s) => s.get(id)),
+  byCustomer: (customerId: string) => getAllByIndex<Task>(STORES.tasks, 'customerId', customerId),
+  put: (task: Task) => tx(STORES.tasks, 'readwrite', (s) => s.put(task)),
+  remove: (id: string) => tx(STORES.tasks, 'readwrite', (s) => s.delete(id)),
+};
+
 export const outboxRepo = {
   all: () => tx<OutboxEntry[]>(STORES.outbox, 'readonly', (s) => s.getAll()),
   put: (entry: OutboxEntry) => tx(STORES.outbox, 'readwrite', (s) => s.put(entry)),
@@ -262,5 +276,9 @@ export async function deleteInspectionCascade(inspectionId: string): Promise<voi
 export async function deleteCustomerCascade(customerId: string): Promise<void> {
   const inspections = await inspectionsRepo.byCustomer(customerId);
   await Promise.all(inspections.map((inspection) => deleteInspectionCascade(inspection.id)));
+  // Tasks go with the customer. A work order pointing at a customer who is no
+  // longer there is a row on a board that cannot be opened or closed.
+  const tasks = await tasksRepo.byCustomer(customerId);
+  await Promise.all(tasks.map((task) => tasksRepo.remove(task.id)));
   await customersRepo.remove(customerId);
 }

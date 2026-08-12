@@ -160,10 +160,10 @@ turns out to be wrong has not stamped a permanent accusation onto a QC document.
 | --- | :---: | --- |
 | Scoring engine — pass/fail thresholds, composite % | **Partial** | `scoreOf` (`src/lib/inspection.ts:257`): percentage of judged items passed, N/A excluded so skipping cannot inflate; `scoreBand` (`:285`) gives pass ≥95 / watch ≥85 / fail, with **any critical failure forcing fail regardless of percentage**. Section-level progress exists (`sectionProgress`). |
 | Configurable point allocations (0–100) per answer | **Gap** | Every checkpoint weighs the same. Thresholds are constants in code, not settings. |
-| Auto-flagging → Supervisor Triage Queue | **Gap** | Failures are visible on the inspection and on its QC card, but nothing routes anywhere or lands in anyone's queue. |
+| Auto-flagging → Supervisor Triage Queue | **Partial** | A failure still does not route anywhere by itself, but there is now a queue for it to land in: the work-order board is company-wide, orders critical items first and overdue ones next, and is reachable from the home screen with its open count on the button. Raising the task is a deliberate act on the punch list rather than something that happens automatically. |
 | Custom flag library, colour-coded, sticky flag nav | **Partial** | Two fixed flags — `critical` and `photoOnPass` (`src/lib/types.ts:22`) — set per checkpoint by an admin, and consistently colour-coded in the UI. No user-defined flag set, no in-inspection flag navigation bar. |
-| Tasks & work orders, `New → Assigned → To Do → In Progress → Done → Verified` | **Gap** | No task entity exists. |
-| Punch lists & deficiency tracking to sign-off | **Built, less assignment** | `src/lib/punch.ts` + `PunchListScreen`: every failed checkpoint across a customer's inspections, critical first, each linking back to the inspection that raised it, closable with a note on a re-check. Read back through each inspection's frozen snapshot, so the wording is what was actually failed. Still missing: assignment to a person or subcontractor. |
+| Tasks & work orders, `New → Assigned → To Do → In Progress → Done → Verified` | **Built** | `src/lib/tasks.ts` + `TasksScreen`, on a synced `tasks` table (`0014_tasks.sql`). All six states, with the transitions decided in one pure module rather than by whichever button is on screen: `assigned` and beyond require an assignee, and `verified` is reachable only from `done` — otherwise the two states that carry the whole point of the lifecycle collapse into one. Reopening a verified task demands a reason, as unlocking a signed inspection does. Missing from the TRD's version: no assignment to an outside subcontractor, which needs the account model the third-party sharing row describes. |
+| Punch lists & deficiency tracking to sign-off | **Built** | `src/lib/punch.ts` + `PunchListScreen`: every failed checkpoint across a customer's inspections, critical first, each linking back to the inspection that raised it, closable with a note on a re-check. Read back through each inspection's frozen snapshot, so the wording is what was actually failed. A punch item can now be raised as a work order, which puts a name and a due date on it; the correction itself is still recorded in one place — on the customer — and the board reads it back rather than keeping a second copy. |
 | Custom statuses & approval routing (`Submitted → QA Review → Client Approved → Archived`) | **Gap** | `InspectionStatus` is `in-progress \| completed` (`src/lib/types.ts:151`). |
 | Inspection locking with rationale log on override | **Built** | A completed inspection is read-only in the app and the server refuses edits to one from anybody but an admin. Unlocking now requires a reason (`src/screens/ReportScreen.tsx`), shows it on the report from then on, and a trigger copies it into `audit_log` — a table with a select policy and no insert, update or delete policy at all, so only a `security definer` trigger can write it and nothing can change it. |
 | Daily activity reports (batch PDF, emailed/webhooked) | **Gap** | Needs the server tier. |
@@ -192,11 +192,12 @@ turns out to be wrong has not stamped a permanent accusation onto a QC document.
 
 | TRD requirement | Status | As built |
 | --- | :---: | --- |
-| Branded PDF — logos, header/footer themes, pass/fail badges, annotated galleries | **Partial** | `ReportScreen` renders the full record — job info, summary notes, every section with pass/fail marks, deficiency explanations with photo grids, measured values, both signatures — with print styles tuned so **Print → Save as PDF** produces the customer document. Pass/fail badges are there, and as of `0005_branding.sql` so is a per-company logo in a fixed letterhead slot (`src/lib/branding.ts`), reserved so adding one never reflows the page. Missing: theming, layout presets, server-side rendering. |
+| Branded PDF — logos, header/footer themes, pass/fail badges, annotated galleries | **Built** | `src/lib/pdf/` produces the customer document directly: US Letter, company letterhead and logo, the pass/fail summary, job information, every section with its marks and deficiency notes, annotated photo galleries flattened with the same `strokePath`/`arrowHead` geometry the screen uses, serials in a monospaced block, both signatures, and a footer identifying the job on every sheet. Pagination is decided by a pure module (`layout.ts`) rather than by whichever browser the inspector happened to use. Built on the device rather than on a server — see §13. Missing: theming and layout presets. |
+
 | Layout presets (Quality Audit / Executive / Client Facing / Word) | **Gap** | One layout. |
 | Custom Word `.docx` with `{{field}}` tags | **Gap** | — |
-| Excel exports (raw / pivot / summary) | **Built** | JSON export only (`ReportScreen.exportJson`). `docs/checklists.csv` is a CSV of *checklist definitions*, not results. The Postgres view `inspection_summary` (`supabase/migrations/0002_customers.sql:97`) already flattens pass/fail counts per inspection and is one step from a real office spreadsheet. |
-| REST API & webhooks (`inspection.created/completed`, `task.flagged`) | **Gap** | Supabase exposes PostgREST over the tables, but none of the TRD's `/v1` contract exists and nothing fires on completion. |
+| Excel exports (raw / pivot / summary) | **Built** | Two CSVs from the Completed screen (`src/lib/exportCsv.ts`): one row per completed inspection, and one row per answered checkpoint for pivoting. Both are built from what the device already holds, so they work with no signal. `inspection_summary` (`supabase/migrations/0002_customers.sql:97`) remains the other half for anything pointing a BI tool at Postgres. JSON export of a single report is still on `ReportScreen`. |
+| REST API & webhooks (`inspection.created/completed`, `task.flagged`) | **Partial** | `inspection.completed` fires in the TRD's documented payload shape, with the body frozen at the moment of completion and a backoff schedule behind it (`src/lib/webhooks.ts`, `supabase/functions/deliver-webhooks`). `inspection.created` and `task.flagged` do not exist, and neither does the `/v1` REST contract — Supabase still exposes PostgREST over the tables. |
 | Cloud storage auto-sync (Drive / Dropbox / OneDrive / SharePoint, `/Client/Project/Year/`) | **Gap** | — |
 | BI connectors (Power BI, Looker Studio, Metabase) | **Partial** | Any of them can point at Postgres today; `inspection_summary` is a usable starting view. No curated dataset or dashboard. |
 
@@ -209,9 +210,9 @@ turns out to be wrong has not stamped a permanent accusation onto a QC document.
 | 1 — Template Builder Web Canvas | **Partial** | `ChecklistEditorScreen` covers the centre canvas. No left field palette (there are only three question kinds to drag) and no right inspector panel (properties are inline). Both arrive naturally with more field types. |
 | 2 — Mobile Field Inspection | **Built** | The closest match in the app. Offline badge (`OfflineBanner`), progress metrics, one-tap Yes/No/N-A tiles, inline Add Photo, sticky bottom bar. Missing from the TRD's bar: flag navigation and voice dictation. |
 | 3 — Mobile Evidence & Camera Annotator | **Partial** | Built since this table was first written: `0010` added arrow, box, circle, freehand and text marks in normalised coordinates, and `0009` burns the time, coordinates and inspector into the pixels. Still missing: a capture-mode toggle, and the TRD's blur and measurement tools. |
-| 4 — Report Generation & Layout Engine | **Partial** | Report preview, download and a read-only share link exist; no preset switcher and no email — QC2GO produces the link, the sender delivers it. |
+| 4 — Report Generation & Layout Engine | **Partial** | Report preview, a paginated branded PDF, spreadsheet export and a read-only share link all exist; no preset switcher and no email — QC2GO produces the file and the link, the sender delivers them. |
 | 5 — Mobile AI Walkthrough & Session Summary | **Gap** | — |
-| 6 — Tasks, Punch Lists & Work Order Center | **Gap** | `CompletedScreen` is the nearest thing — a searchable history of finished inspections — but it is a record, not a queue. |
+| 6 — Tasks, Punch Lists & Work Order Center | **Built** | `TasksScreen` is the centre: every open work order across every customer, filterable by state, assignable and datable in place, with the history of who moved it. `PunchListScreen` remains the per-customer view and is where an order is raised. Missing from the blueprint: a calendar view and drag-between-columns, both of which want a screen wider than a phone. |
 
 QC2GO also ships three screens the TRD never describes, all of which came from
 the actual job rather than from the spec: **customer-first navigation** (the top
@@ -691,3 +692,127 @@ production failure rather than an error:
 3. **Photo deletes chased files that never existed.** Queueing a delete computed
    a bucket path when the record had none — but a record with no `storagePath`
    was never uploaded. Now it queues the path only when there is one.
+
+**`src/lib/pdf/` — the customer deliverable stops being the print dialog.**
+Item 7 of the roadmap above, and the last unbuilt entry in tiers 1 and 2. Until
+now the only way a finished report left the app as a document was **Print → Save
+as PDF**, which is the one part of the deliverable nobody controls: pagination
+differs between Chrome, Safari and a phone, a checkpoint can be sliced in half by
+a page break, and what a customer receives depends on which button they pressed.
+
+**Built on the device, not on a server, which is a deliberate departure from what
+the roadmap said.** The reasoning that put it there was that a server gives
+consistent pagination and a real file rather than the browser's print dialog —
+and both of those are properties of the layout code, not of where it runs. Set
+against that, a server-rendered PDF is one an inspector cannot produce in a
+crawlspace, in an app whose entire premise is that they can finish a job with no
+signal; and it would have been inert until the Edge Functions are deployed. So it
+runs locally, behind a dynamic import — pdf-lib costs ~180 KB gzipped and is
+fetched only by somebody who asks for a file, then precached with the rest of the
+build so the second tap works offline. Server-side rendering remains the right
+answer for a report generated *for* somebody who is not holding the device, which
+is where a share-link download or a scheduled email would want it.
+
+Three things shaped the implementation.
+
+**Deciding where the page breaks is separate from drawing it.** `layout.ts`
+takes measured heights and returns pages; it imports nothing. That is what makes
+the dangerous part testable, and the dangerous part is not ugliness — it is a
+checkpoint that quietly does not appear in the file somebody was handed. The
+invariant asserted in `check:pdf-layout` is conservation: every block handed in
+comes back exactly once, and a block too tall for any page overflows visibly
+rather than being dropped or looped over forever. Widow control and
+keep-with-next for section headings ride along on the same pass, and both were
+confirmed to fire by breaking them deliberately and watching the right checks
+fail.
+
+**A serial number is the string most likely to be wider than its column.** It
+arrives as one unbroken token by design, and a word-wrapper with no answer for
+that emits a line that runs off the edge of the page — losing precisely the half
+somebody needs for a warranty registration. `wrapText` hard-splits it instead.
+
+**The built-in PDF fonts throw rather than drawing a missing glyph.** One emoji
+pasted into a note, one Cyrillic surname, one invisible control byte from a
+barcode scanner, and the button would appear to be broken rather than the report
+appearing to be imperfect. `encodable` substitutes those characters for display
+only; the record itself is untouched.
+
+The marks on a photo are drawn with the same `strokePath` and `arrowHead` the
+screen uses, flattened into the raster at 700 px — an arrow that points at one
+thing on a phone and something else on paper is the failure that would discredit
+an annotated photo in front of a customer. Photos are contained rather than
+cropped for the same reason: the defect is not reliably in the middle of the
+frame. The smoke test downloads the file, inflates its streams and asserts the
+words on the page, because nothing in the layout checks proves pdf-lib draws
+anything at all; the PDF is kept beside the screenshots as a CI artifact.
+
+**`0014_tasks.sql` — who is actually doing it.** Item 13 of the roadmap above,
+and the thing the punch list was always one field short of. The punch list could
+say what was still open on a customer; it could not say whose job it was, which
+is the question a supervisor has on a Monday morning.
+
+Six states is more than a small crew needs to describe a piece of work, and two
+of them are the reason to have it at all: **`done` is the claim that the work is
+finished and `verified` is somebody having looked.** So `verified` is reachable
+only from `done`. A board where a task can jump straight to Verified has one
+state wearing two names, and a QC app that ships that has quietly deleted its
+own subject.
+
+The same reasoning makes `assigned` and everything past it refuse to happen
+without an assignee. A board filling up with work nobody owns is precisely the
+failure this feature exists to fix, and it would have been reproduced inside the
+fix.
+
+**The correction is recorded in one place, not two.** A task raised from a
+failed checkpoint does not store whether the deficiency was fixed — that has
+always lived in the customer's `punchResolutions`, where the punch list reads
+it, and `effectiveState` reads it back. Verifying such a task writes the
+resolution rather than a task state. Two records both claiming to know whether a
+deficiency was corrected is a disagreement waiting to happen, and the one that
+would be believed is whichever screen somebody had open. The smoke test asserts
+the pair directly: correcting the item on the punch screen closes its work order
+without anybody having touched the board.
+
+Three smaller decisions, each of which would have been found by a user rather
+than by us:
+
+1. **The assignee is a suggestion, not a closed list.** It was a `<select>` over
+   the admin-maintained roster, which is empty on a company that has not filled
+   it in — and since nothing moves off New without a name on it, the entire
+   board would have been frozen with nothing on screen explaining why. The same
+   shape of failure as a circuit breaker that never opens for a small
+   deployment. Found by the smoke test, which could not assign anybody.
+2. **A due date is a day, not a moment.** Run through a timestamp it becomes
+   midnight somewhere and reads as overdue an afternoon early for everybody west
+   of it. It is a `date` in Postgres and a `YYYY-MM-DD` string on the device,
+   compared as text.
+3. **One live work order per deficiency**, enforced by a partial unique index
+   scoped to the company — two rows that close each other would both look
+   correct on the board. Archiving one releases the deficiency, or a task raised
+   by mistake would make that checkpoint permanently unassignable.
+
+Self-verification — the same account marking a task done and then verifying it —
+is **a company setting rather than our opinion**. Some crews want a second pair
+of eyes on every correction; a two-person company enforcing that would deadlock
+on its own rule. So `requireSecondVerifier` sits on `shared_config` beside the
+name lists, off by default: off, self-verification happens and is recorded and
+shown on the task, which is what the pencil-whipping checks do with the same
+kind of signal; on, it is refused with a message that says why.
+
+The rule can only bite where it can be satisfied. It reads the *latest* `done`
+event, so rework by somebody else clears it rather than leaving a task stuck
+behind a superseded claim; it stands down entirely when no account is signed in,
+because local mode has no second person to be; and `legalMoves` applies it too,
+so a move the policy would refuse is not offered as a button that appears to do
+nothing. Settings says out loud that a company with one account will find work
+orders stop at Done, which is the sentence that would otherwise have to be
+discovered.
+
+**What the verifier is looking for** is carried rather than remembered. The
+person re-checking a correction is often not the person who made it, and on
+something from three weeks ago may never have seen the original failure. A task
+raised from a checkpoint inherits that checkpoint's own `help` — the "what good
+looks like" line an admin already wrote on the checklist — as its verification
+criteria, editable per task and shown in the prompt at the moment of verifying.
+Where the checklist says nothing, the board asks somebody to, rather than
+leaving an inexperienced verifier to infer the standard from the question.

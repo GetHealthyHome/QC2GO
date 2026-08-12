@@ -14,7 +14,8 @@
     "check:auth-gate": "node scripts/check-auth-gate.mjs",
     "check:sync-mappers": "node scripts/check-sync-mappers.mjs",
     "check:migrations": "node scripts/check-migrations.mjs",
-    "check:invite-authorization": "node scripts/check-invite-authorization.mjs"
+    "check:invite-authorization": "node scripts/check-invite-authorization.mjs",
+    "check:exif": "node scripts/check-exif.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

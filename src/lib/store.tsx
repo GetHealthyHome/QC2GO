@@ -26,7 +26,7 @@ import {
   useSyncStatus,
   type SyncStatus,
 } from './sync';
-import { compressImage } from './image';
+import { prepareEvidencePhoto } from './image';
 import type {
   Customer,
   Inspection,
@@ -357,12 +357,19 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   const addPhoto = useCallback<StoreValue['addPhoto']>(
     async (inspectionId, questionId, file) => {
-      const blob = await compressImage(file);
+      const prepared = await prepareEvidencePhoto(file, {
+        inspectionId,
+        inspectorName: auth.profile?.fullName || auth.profile?.email || settings.inspectorName,
+      });
       const photo: PhotoRecord = {
         id: newId('img'),
         inspectionId,
         questionId,
-        blob,
+        blob: prepared.blob,
+        takenAt: prepared.takenAt,
+        gps: prepared.gps,
+        gpsSource: prepared.gpsSource,
+        watermarked: prepared.watermarked,
         createdAt: new Date().toISOString(),
       };
       await photosRepo.put(photo);

@@ -42,6 +42,53 @@ function geolocationMessage(error: GeolocationPositionError): string {
   return 'Could not read this device location.';
 }
 
+/**
+ * A position for stamping onto a photo, kept warm in the background.
+ *
+ * Taking a photo must never wait on a GPS fix. An inspector is standing in a
+ * crawlspace with one hand free, indoors, where a fix can take fifteen seconds
+ * or never arrive — and a photo that takes fifteen seconds to save is a worse
+ * outcome than a photo with no coordinates on it. So nothing here is on the
+ * capture path: `refreshPosition` runs in the background and `cachedPosition`
+ * answers instantly with whatever the last one found.
+ *
+ * The practical effect is that the first photo of a visit may carry no
+ * coordinates and the rest do, which is the right trade in that order.
+ */
+let lastKnown: GeoPoint | null = null;
+let refreshing = false;
+
+/** Fire and forget. Never rejects; failing to get a fix is an ordinary outcome. */
+export function refreshPosition(): void {
+  if (refreshing || !('geolocation' in navigator)) return;
+  refreshing = true;
+  navigator.geolocation.getCurrentPosition(
+    (position) => {
+      refreshing = false;
+      lastKnown = {
+        lat: position.coords.latitude,
+        lng: position.coords.longitude,
+        accuracy: position.coords.accuracy,
+        capturedAt: new Date().toISOString(),
+      };
+    },
+    () => {
+      refreshing = false;
+    },
+    { enableHighAccuracy: false, timeout: 10_000, maximumAge: 120_000 },
+  );
+}
+
+/**
+ * The last fix, if it is recent enough to still describe where somebody is.
+ * Synchronous by design — see above.
+ */
+export function cachedPosition(maxAgeMs = 10 * 60_000): GeoPoint | null {
+  if (!lastKnown) return null;
+  const age = Date.now() - new Date(lastKnown.capturedAt).getTime();
+  return age <= maxAgeMs ? lastKnown : null;
+}
+
 const EARTH_RADIUS_MILES = 3958.8;
 
 const toRadians = (degrees: number) => (degrees * Math.PI) / 180;

@@ -202,6 +202,10 @@ export function photoToRow(
     question_id: photo.questionId,
     storage_path: storagePath,
     caption: photo.caption ?? null,
+    taken_at: photo.takenAt ?? null,
+    gps: photo.gps ?? null,
+    gps_source: photo.gpsSource ?? null,
+    watermarked: photo.watermarked ?? false,
     created_by: userId,
     created_at: photo.createdAt,
   };
@@ -215,6 +219,10 @@ export function rowToPhoto(row: Row): PhotoRecord {
     questionId: text(row.question_id),
     storagePath: optionalText(row.storage_path),
     caption: optionalText(row.caption),
+    takenAt: optionalText(row.taken_at),
+    gps: (row.gps as PhotoRecord['gps'] | null) ?? undefined,
+    gpsSource: (optionalText(row.gps_source) as PhotoRecord['gpsSource']) ?? undefined,
+    watermarked: row.watermarked === true ? true : undefined,
     createdAt: iso(row.created_at, new Date().toISOString()),
   };
 }

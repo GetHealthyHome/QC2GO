@@ -42,6 +42,12 @@ jobs:
       - name: Check who may invite whom
         run: npm run check:invite-authorization
 
+      # Byte-level parsing fails quietly: a wrong offset gives a plausible
+      # number rather than an error, and a missed hemisphere reference puts a
+      # job on the wrong side of the equator.
+      - name: Check the EXIF reader
+        run: npm run check:exif
+
       - name: Build
         run: npm run build
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useParams, useSearchParams } from 'react-router-dom';
 import { useChecklist, useCustomer, useInspection, useStore } from '../lib/store';
+import { refreshPosition } from '../lib/geo';
 import {
   VISIT_TYPE_LABELS,
   getResponse,
@@ -16,6 +17,11 @@ import { AlertIcon, CheckIcon, ChevronLeftIcon, ChevronRightIcon } from '../comp
 const INFO_STEP = 'job-info';
 
 export function InspectionScreen() {
+  // Ask for a fix as the inspection opens, so the first photo of the visit has
+  // one to stamp rather than being the one that goes without. Fire and forget —
+  // nothing here waits on it, and a refusal is an ordinary outcome.
+  useEffect(() => refreshPosition(), []);
+
   const { inspectionId } = useParams();
   const inspection = useInspection(inspectionId);
   const customer = useCustomer(inspection?.customerId);

@@ -74,6 +74,21 @@ partly met, what has not been started, and the handful of requirements worth
 adapting rather than copying — and ends with a sequenced list of what to build
 next.
 
+### Photo evidence
+
+Every photo is stamped, in the pixels, with the UTC time it was taken, the
+coordinates if anything could supply them, the inspector and the inspection id.
+Pixels rather than metadata, because metadata does not survive being exported to
+a PDF, printed, screenshotted, or pulled out of a report and emailed on — which
+is most of the ways one of these photos is ever looked at.
+
+The capture time and any coordinates are read from the file **before** it is
+downscaled, since re-encoding through a canvas discards them. Where the camera
+recorded no location, the device's own last known position is used and labelled
+as such — never waited on, because a photo that takes fifteen seconds to save
+while a phone hunts for a fix in a crawlspace is worse than a photo without
+coordinates.
+
 ### Question types
 
 - **Yes / No / N/A** — the standard checkpoint.

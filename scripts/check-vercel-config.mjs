@@ -65,6 +65,40 @@ if (!Array.isArray(config.headers)) {
   });
 }
 
+/*
+ * Features the app cannot have without the header saying so.
+ *
+ * `Permissions-Policy` fails in the most confusing direction available: the
+ * browser refuses the API and the app reports it as the *user* having denied
+ * permission, so the advice on screen is to grant a permission that would never
+ * have helped. This shipped once — `geolocation=()` denies it to every origin
+ * including this one, which silently broke "Use my location" and "Near me" on
+ * every deployment while both worked perfectly on localhost, where no header is
+ * served at all.
+ */
+const REQUIRED_PERMISSIONS = {
+  camera: 'photo capture on the deficiency flow',
+  geolocation: '"Use my location" on a customer, and "Near me" on the home screen',
+};
+
+const permissionsPolicy = (config.headers ?? [])
+  .flatMap((entry) => entry.headers ?? [])
+  .find((header) => header.key?.toLowerCase() === 'permissions-policy')?.value;
+
+if (permissionsPolicy) {
+  for (const [feature, why] of Object.entries(REQUIRED_PERMISSIONS)) {
+    const directive = permissionsPolicy.match(new RegExp(`${feature}=\\(([^)]*)\\)`));
+    if (!directive) continue;
+    const allowList = directive[1].trim();
+    if (!/\bself\b/.test(allowList)) {
+      fail(
+        `Permissions-Policy denies ${feature} to this origin (${feature}=(${allowList})), ` +
+          `which breaks ${why}. Use ${feature}=(self).`,
+      );
+    }
+  }
+}
+
 // The build has to actually produce what the config points Vercel at.
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 if (config.buildCommand && !Object.values(pkg.scripts ?? {}).length) {

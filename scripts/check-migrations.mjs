@@ -126,6 +126,8 @@ const TENANT_TABLES = [
   'photos',
   'tombstones',
   'audit_log',
+  'webhook_endpoints',
+  'webhook_deliveries',
 ];
 
 check('every tenant table carries org_id', () => {
@@ -495,6 +497,114 @@ check('an inspector cannot read invitations at all', () => {
   const crew = '55555555-5555-5555-5555-555555555555';
   const seen = tx(crew, `select count(*) from public.invites;`);
   return seen === '0' ? null : `an inspector sees ${seen} invitations`;
+});
+
+check('completing an inspection queues a delivery for each endpoint', () => {
+  psql(`
+    insert into public.webhook_endpoints (id, org_id, url, secret, created_by) values
+      ('e1111111-0000-0000-0000-000000000001', 'aaaaaaaa-0000-0000-0000-000000000001',
+       'https://acme.example/hooks/qc', 'shh', '${ACME}'),
+      ('e1111111-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001',
+       'https://acme.example/hooks/crm', 'shh', '${ACME}'),
+      -- Switched off, and a different company's. Neither should be queued.
+      ('e1111111-0000-0000-0000-000000000003', 'aaaaaaaa-0000-0000-0000-000000000001',
+       'https://acme.example/hooks/old', 'shh', '${ACME}'),
+      ('e2222222-0000-0000-0000-000000000004', 'bbbbbbbb-0000-0000-0000-000000000002',
+       'https://beta.example/hooks/qc', 'shh', '${BETA}');
+    update public.webhook_endpoints set active = false
+      where id = 'e1111111-0000-0000-0000-000000000003';
+
+    insert into public.inspections
+      (id, org_id, customer_id, snapshot, visit_type, status, created_by, info,
+       overall_score, pass_fail_status, total_deficiencies)
+    values ('insp-hook', 'aaaaaaaa-0000-0000-0000-000000000001', 'cust-acme', '{}',
+            'final-walkthrough', 'in-progress', '${ACME}', '{"inspector":"A. Holcombe"}',
+            null, null, null);
+
+    update public.inspections
+       set status = 'completed', completed_at = now(),
+           overall_score = 94, pass_fail_status = 'NEEDS_REVIEW', total_deficiencies = 1
+     where id = 'insp-hook';`);
+
+  const queued = psql(`
+    select count(*) from public.webhook_deliveries
+     where payload -> 'data' ->> 'inspection_id' = 'insp-hook';`);
+  return queued === '2' ? null : `queued ${queued} deliveries, expected 2`;
+});
+
+check('the payload is the documented shape, not our own field names', () => {
+  // Whoever receives this is integrating against the TRD's contract. The moment
+  // it is easier to send the internal shape, the contract starts drifting.
+  const body = psql(`
+    select payload::text from public.webhook_deliveries
+     where payload -> 'data' ->> 'inspection_id' = 'insp-hook' limit 1;`);
+  const parsed = JSON.parse(body);
+
+  if (parsed.event !== 'inspection.completed') return `event was ${parsed.event}`;
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(parsed.timestamp)) {
+    return `timestamp was ${parsed.timestamp}`;
+  }
+  for (const key of ['inspection_id', 'organization_id', 'site_id', 'inspector', 'summary']) {
+    if (!(key in parsed.data)) return `data is missing ${key}`;
+  }
+  if (parsed.data.summary.overall_score !== 94) return `score was ${parsed.data.summary.overall_score}`;
+  if (parsed.data.summary.pass_fail_status !== 'NEEDS_REVIEW') {
+    return `verdict was ${parsed.data.summary.pass_fail_status}`;
+  }
+  if (parsed.data.inspector.name !== 'A. Holcombe') return `inspector was ${parsed.data.inspector.name}`;
+  if (parsed.data.site?.customer_name !== 'Acme Customer') return `site was ${JSON.stringify(parsed.data.site)}`;
+  return null;
+});
+
+check('the payload is frozen at completion, not read again later', () => {
+  // An inspection can be reopened and amended. A delivery retrying an hour
+  // later has to send the body it was always going to send.
+  psql(`update public.inspections set overall_score = 12 where id = 'insp-hook';`);
+  const score = psql(`
+    select payload -> 'data' -> 'summary' ->> 'overall_score'
+      from public.webhook_deliveries
+     where payload -> 'data' ->> 'inspection_id' = 'insp-hook' limit 1;`);
+  return score === '94' ? null : `the stored payload now says ${score}`;
+});
+
+check('an inspection that arrives already completed still fires', () => {
+  // The app is offline-first: a whole visit can be walked and signed with no
+  // signal and reach the server in a single insert, never passing through
+  // in-progress on this side at all.
+  psql(`
+    insert into public.inspections
+      (id, org_id, customer_id, snapshot, visit_type, status, created_by, completed_at)
+    values ('insp-offline', 'aaaaaaaa-0000-0000-0000-000000000001', 'cust-acme', '{}',
+            'site-visit', 'completed', '${ACME}', now());`);
+  const queued = psql(`
+    select count(*) from public.webhook_deliveries
+     where payload -> 'data' ->> 'inspection_id' = 'insp-offline';`);
+  return queued === '2' ? null : `queued ${queued}, expected 2`;
+});
+
+check('an ordinary edit to a completed inspection queues nothing more', () => {
+  const before = psql(`select count(*) from public.webhook_deliveries;`);
+  psql(`update public.inspections set summary_notes = 'tidied up' where id = 'insp-hook';`);
+  const after = psql(`select count(*) from public.webhook_deliveries;`);
+  return before === after ? null : `the queue grew from ${before} to ${after}`;
+});
+
+check('only an owner can point QC2GO at a URL', () => {
+  // The secret is a credential and the URL decides where a company's data goes.
+  const asAdmin = tx(
+    ACME_ADMIN,
+    `insert into public.webhook_endpoints (org_id, url, secret)
+     values ('aaaaaaaa-0000-0000-0000-000000000001', 'https://elsewhere.example/x', 'shh');`,
+    { expectError: true },
+  );
+  return asAdmin?.error ? null : 'an admin registered an endpoint';
+});
+
+check('one company cannot read another\'s endpoints or deliveries', () => {
+  const endpoints = tx(BETA, `select url from public.webhook_endpoints;`);
+  if (endpoints.includes('acme.example')) return 'Beta can read Acme\'s endpoints';
+  const deliveries = tx(BETA, `select payload::text from public.webhook_deliveries;`);
+  return deliveries.includes('insp-hook') ? 'Beta can read Acme\'s deliveries' : null;
 });
 
 check('an owner can set their own company logo', () => {

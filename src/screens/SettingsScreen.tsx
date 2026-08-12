@@ -11,6 +11,7 @@ import {
   ChevronRightIcon,
   ClipboardIcon,
   PlusIcon,
+  ShareIcon,
   SettingsIcon,
   TrashIcon,
   UserIcon,
@@ -194,6 +195,26 @@ export function SettingsScreen() {
               Company branding
             </h2>
             <BrandingCard />
+          </>
+        ) : null}
+
+        {auth.enabled && isAdmin && auth.profile?.organization ? (
+          <>
+            <h2 className="mt-8 mb-2.5 px-1 text-[13px] font-bold tracking-wide text-ink-500 uppercase">
+              Integrations
+            </h2>
+            <Card className="active:bg-ink-50">
+              <Link to="/integrations" className="flex items-center gap-3 p-4">
+                <ShareIcon className="size-5 shrink-0 text-ink-300" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[15px] font-semibold text-ink-900">Webhooks</p>
+                  <p className="text-xs text-ink-500">
+                    Send every signed inspection to your own systems
+                  </p>
+                </div>
+                <ChevronRightIcon className="size-5 shrink-0 text-ink-300" />
+              </Link>
+            </Card>
           </>
         ) : null}
 

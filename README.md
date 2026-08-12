@@ -239,6 +239,15 @@ happens in a Supabase Edge Function (`supabase/functions/invite-user`) rather
 than in the browser — see [`supabase/README.md`](supabase/README.md), which also
 covers creating a company and its first owner.
 
+## Integrations
+
+A company can point QC2GO at its own systems: every signed inspection is posted
+as a signed JSON body to whatever addresses an owner registers under
+**Settings → Integrations**. The payload follows the documented contract rather
+than this app's internal field names, deliveries are queued and retried rather
+than fired and forgotten, and each request carries an HMAC signature so the
+receiver can tell it really came from here.
+
 ## Backend
 
 The app is local-first and works standalone today. `supabase/migrations/0001_init.sql`

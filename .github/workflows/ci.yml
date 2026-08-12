@@ -54,6 +54,12 @@ jobs:
       - name: Check the annotation geometry
         run: npm run check:annotations
 
+      # A backoff that does not back off hammers a customer's server; one that
+      # gives up too early loses an event somebody was relying on. Neither
+      # shows up anywhere until it is expensive.
+      - name: Check the webhook retry schedule
+        run: npm run check:webhooks
+
       - name: Build
         run: npm run build
 

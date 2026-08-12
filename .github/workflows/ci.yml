@@ -101,6 +101,13 @@ jobs:
       - name: Check the pencil-whipping heuristics
         run: npm run check:integrity
 
+      # The only code in QC2GO that deletes evidence, with no undo and no second
+      # copy on the server. Almost every case here is a case where it must NOT
+      # delete — above all, a failed lookup must never read as "no photos
+      # exist", which would make every file in the bucket an orphan.
+      - name: Check what the photo sweeper may delete
+        run: npm run check:sweep
+
       - name: Build
         run: npm run build
 

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useAuth } from '../lib/auth';
 import { Button, Field, TextInput } from '../components/ui';
 import { AlertIcon } from '../components/Icons';
+import { BrandLockup } from '../components/Brandmark';
 
 const MIN_LENGTH = 10;
 
@@ -41,9 +42,8 @@ export function SetPasswordScreen() {
   return (
     <div className="safe-pt safe-pb flex min-h-screen flex-col justify-center bg-ink-900 px-5 py-10">
       <div className="mx-auto w-full max-w-sm">
-        <div className="mb-8 text-center">
-          <h1 className="text-3xl font-bold tracking-tight text-white">QC2GO</h1>
-          <p className="mt-1 text-sm text-white/60">Quality in motion</p>
+        <div className="mb-8">
+          <BrandLockup />
         </div>
 
         <form onSubmit={submit} className="rounded-2xl bg-white p-5" autoComplete="on">

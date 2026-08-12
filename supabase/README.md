@@ -1,6 +1,6 @@
 # Supabase backend
 
-Six migrations:
+Seven migrations:
 
 - **`0001_init.sql`** — tables, roles, row-level security, the photo storage
   bucket, and an office summary view.
@@ -18,11 +18,13 @@ Six migrations:
   company handing it over.
 - **`0006_audit_log.sql`** — an append-only ledger, and the reason a signed
   inspection was unlocked.
+- **`0007_stored_scores.sql`** — the result written down at sign-off, for
+  everything outside the app that cannot derive it.
 
-All six are replayed end-to-end from an empty PostgreSQL 16 database on every
+All seven are replayed end-to-end from an empty PostgreSQL 16 database on every
 pull request, along with a two-company isolation suite — see
 [Proving the boundary](#proving-the-boundary). `0001` through `0004` are applied
-to the live project; `0005` and `0006` apply on merge.
+to the live project; `0005` through `0007` apply on merge.
 
 ## Setting it up
 
@@ -230,9 +232,21 @@ photo was one guessed path away from anybody with an account. The app reads
 through signed URLs, so interior photos of customers' homes are never publicly
 addressable either.
 
-**`inspection_summary`** is one row per inspection with pass/fail/N-A counts
-computed from the responses JSON — the view to point a dashboard or a Google
-Sheets mirror at.
+**`inspections.overall_score`, `pass_fail_status`, `total_deficiencies`** are the
+result, written once at sign-off and null until then. Inside the app the score is
+still derived from the responses on every read, which is right: the frozen
+snapshot sits beside them, so the number cannot drift from what the inspection
+said. These exist for everything that cannot run that code — a webhook body, a
+spreadsheet export, a dashboard. Both are produced by the same function, so there
+is one rule rather than two implementations free to disagree.
+
+Reopening a signed record clears them. A verdict belongs to the sign-off that
+produced it, and a reopened inspection does not have one.
+
+**`inspection_summary`** is one row per inspection — the view to point a
+dashboard or a Google Sheets mirror at. It reports the stored result and keeps
+the raw pass/fail/N-A counts beside it. It used to derive pass and fail itself,
+which quietly made it a second implementation of the scoring rule.
 
 **`audit_log`** is where a signed inspection being unlocked is recorded. It is
 append-only in the strongest sense the database offers: there is a select policy

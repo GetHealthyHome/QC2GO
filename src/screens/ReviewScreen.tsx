@@ -7,6 +7,7 @@ import {
   deficiencies,
   missingEvidencePhotos,
   overallProgress,
+  storedSummary,
 } from '../lib/inspection';
 import type { SignatureRecord } from '../lib/types';
 import { PhotoThumb, PhotoViewer } from '../components/Photos';
@@ -59,10 +60,17 @@ export function ReviewScreen() {
 
   function complete() {
     setAttempted(true);
-    if (!canComplete || !inspection) return;
+    if (!canComplete || !inspection || !checklist) return;
+    // The result is written down here, once, by the same code that draws it on
+    // screen. Everything outside the app — a webhook, a spreadsheet, a
+    // dashboard — reads these rather than recomputing from raw answers.
+    const summary = storedSummary(inspection, checklist.sections);
     updateInspection(inspection.id, {
       status: 'completed',
       completedAt: new Date().toISOString(),
+      overallScore: summary.overallScore,
+      passFailStatus: summary.passFailStatus,
+      totalDeficiencies: summary.totalDeficiencies,
     });
     navigate(`/inspections/${inspection.id}/report`, { replace: true });
   }

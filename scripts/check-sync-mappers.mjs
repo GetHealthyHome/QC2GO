@@ -96,6 +96,9 @@ const inspection = {
     q2: { answer: 'yes', photoIds: [] },
   },
   summaryNotes: 'Punch list issued to crew.',
+  overallScore: 94,
+  passFailStatus: 'NEEDS_REVIEW',
+  totalDeficiencies: 1,
   // Stated rather than left out: this fixture is an inspection that was never
   // reopened, and a round trip has to produce exactly that rather than an
   // empty array. `deepStrictEqual` tells the two apart.
@@ -123,6 +126,29 @@ check('a No answer keeps its explanation and its photo', () => {
   const back = m.rowToInspection(m.inspectionToRow(inspection, USER, ORG));
   assert.equal(back.responses.q1.note, 'Rim joist left open at the south wall.');
   assert.deepEqual(back.responses.q1.photoIds, ['img-1']);
+});
+
+check('the stored result round trips', () => {
+  const back = m.rowToInspection(m.inspectionToRow(inspection, USER, ORG));
+  assert.equal(back.overallScore, 94);
+  assert.equal(back.passFailStatus, 'NEEDS_REVIEW');
+  assert.equal(back.totalDeficiencies, 1);
+});
+
+check('an inspection with no result yet stays that way', () => {
+  // Null and zero are different answers here: zero is a score, null is "this
+  // is still being walked". A row that confused them would report every
+  // in-progress inspection as a total failure.
+  const { overallScore, passFailStatus, totalDeficiencies, ...open } = inspection;
+  const row = m.inspectionToRow({ ...open, status: 'in-progress' }, USER, ORG);
+  assert.equal(row.overall_score, null);
+  assert.equal(row.pass_fail_status, null);
+  assert.equal(row.total_deficiencies, null);
+
+  const back = m.rowToInspection(row);
+  assert.equal(back.overallScore, undefined);
+  assert.equal(back.passFailStatus, undefined);
+  assert.equal(back.totalDeficiencies, undefined);
 });
 
 check('reopenings round trip, and stay absent when there are none', () => {

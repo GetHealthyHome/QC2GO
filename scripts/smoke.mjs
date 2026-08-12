@@ -193,6 +193,43 @@ check('deficiency photo persisted', photoCount >= 1, photoCount);
 check('both signatures persisted', sigCount === 2, sigCount);
 await shot('15-report-after-reload', true);
 
+/** Reads an inspection straight out of IndexedDB, past anything the UI derives. */
+async function storedInspection() {
+  return page.evaluate(
+    (id) =>
+      new Promise((resolve, reject) => {
+        const open = indexedDB.open('qc2go');
+        open.onerror = () => reject(open.error);
+        open.onsuccess = () => {
+          const request = open.result
+            .transaction('inspections', 'readonly')
+            .objectStore('inspections')
+            .get(id);
+          request.onsuccess = () => resolve(request.result ?? null);
+          request.onerror = () => reject(request.error);
+        };
+      }),
+    inspectionUrl.split('/').pop(),
+  );
+}
+
+// The score is derived on every read inside the app, and written down once at
+// sign-off for everything outside it. Nothing on screen distinguishes the two,
+// so this reads the record itself.
+const signed = await storedInspection();
+console.log('--- the result, written down ---');
+check('sign-off stored a score', typeof signed?.overallScore === 'number', signed?.overallScore);
+check(
+  'sign-off stored a verdict in the shared vocabulary',
+  ['PASS', 'FAIL', 'NEEDS_REVIEW'].includes(signed?.passFailStatus),
+  signed?.passFailStatus,
+);
+check(
+  'the one failed item is counted as a deficiency',
+  signed?.totalDeficiencies === 1,
+  signed?.totalDeficiencies,
+);
+
 // --- reopening a signed record demands a reason and keeps it ---
 //
 // This is the one action in the app that rewrites history, so the interesting
@@ -251,6 +288,17 @@ check('the reason is recorded on the report', reopened.includes(REASON));
 // Section headings are uppercased by CSS, and innerText reports what is
 // rendered rather than what is in the markup.
 check('the report says it was reopened', /reopened after signing/i.test(reopened));
+
+// The verdict belonged to the sign-off that produced it. Leaving it behind
+// would let a webhook or a spreadsheet report a result on a record that no
+// longer has one.
+const afterReopen = await storedInspection();
+check(
+  'reopening cleared the stored result',
+  afterReopen?.overallScore === undefined && afterReopen?.passFailStatus === undefined,
+  JSON.stringify({ score: afterReopen?.overallScore, status: afterReopen?.passFailStatus }),
+);
+
 await shot('15b-reopened', true);
 
 // --- admin checklist editor ---

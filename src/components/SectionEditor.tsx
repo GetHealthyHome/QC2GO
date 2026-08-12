@@ -3,6 +3,7 @@ import type { Question, QuestionKind, Section } from '../lib/types';
 import { AutoTextarea, Button, Card, Field, TextInput, cx } from '../components/ui';
 import {
   AlertIcon,
+  BarcodeIcon,
   CameraIcon,
   ChevronDownIcon,
   PlusIcon,
@@ -313,6 +314,14 @@ function QuestionEditor({
             label="Photo for record"
             tone="brand"
             onClick={() => onChange({ ...question, photoOnPass: !question.photoOnPass })}
+          />
+          <Toggle
+            active={Boolean(question.scannable)}
+            disabled={readOnly}
+            icon={<BarcodeIcon className="size-3.5" />}
+            label="Serial numbers"
+            tone="brand"
+            onClick={() => onChange({ ...question, scannable: !question.scannable })}
           />
         </div>
       )}

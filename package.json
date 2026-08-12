@@ -20,7 +20,8 @@
     "check:webhooks": "node scripts/check-webhook-schedule.mjs",
     "check:export": "node scripts/check-export.mjs",
     "check:sections": "node scripts/check-sections.mjs",
-    "check:share-access": "node scripts/check-share-access.mjs"
+    "check:share-access": "node scripts/check-share-access.mjs",
+    "check:barcode": "node scripts/check-barcode.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

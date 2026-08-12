@@ -79,6 +79,14 @@ jobs:
       - name: Check who may read a shared report
         run: npm run check:share-access
 
+      # A serial number is what warranty registration is keyed on, and a wrong
+      # character is not found until a compressor fails out of warranty. The
+      # decoding belongs to the browser; what breaks is everything around it —
+      # a detect loop storing forty copies of one plate, or an invisible control
+      # character sitting inside a serial that looks perfectly correct.
+      - name: Check barcode capture
+        run: npm run check:barcode
+
       - name: Build
         run: npm run build
 

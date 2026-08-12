@@ -158,3 +158,13 @@ export const OfflineIcon = (props: IconProps) => (
     <path d="M12 20h.01" />
   </Icon>
 );
+
+export const BarcodeIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+    <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+    <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+    <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+    <path d="M7 8v8M10.5 8v8M14 8v8M17 8v8" />
+  </Icon>
+);

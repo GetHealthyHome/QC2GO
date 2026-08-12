@@ -26,6 +26,18 @@ export interface Question {
   critical?: boolean;
   /** Require a photo even when the answer is Yes (equipment tags, gauges, test screens). */
   photoOnPass?: boolean;
+  /**
+   * This checkpoint records equipment codes — serial and model numbers — and
+   * offers the camera as a way to capture them.
+   *
+   * A flag rather than a fourth question kind on purpose. The QC question on a
+   * serial checkpoint is still a yes/no one ("were they recorded and
+   * photographed?") and it still scores; what was missing was anywhere to put
+   * the numbers themselves. They live in `Response.value`, the same field a
+   * measurement uses, so they export, sync and appear in the payload without
+   * anything new having to learn about them.
+   */
+  scannable?: boolean;
 }
 
 export interface Section {

@@ -36,6 +36,12 @@ jobs:
       - name: Check the sync mappers round-trip
         run: npm run check:sync-mappers
 
+      # The invite function is the only code that runs with the service_role
+      # key, which bypasses row-level security. Nothing underneath it would
+      # catch a mistake, so its decision is a pure function and it is tested.
+      - name: Check who may invite whom
+        run: npm run check:invite-authorization
+
       - name: Build
         run: npm run build
 

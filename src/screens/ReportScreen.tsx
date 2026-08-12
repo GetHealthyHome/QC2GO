@@ -60,12 +60,31 @@ export function ReportScreen() {
     URL.revokeObjectURL(url);
   }
 
+  /**
+   * Unlocking a signed record is the one action here that rewrites history, so
+   * it does not happen without a reason attached. The reason lands on the
+   * inspection — visible in the report, and carried offline like everything
+   * else — and the server copies it into an append-only ledger when the change
+   * syncs, which is the copy nobody can edit.
+   */
   function reopen() {
     if (!inspection) return;
-    if (!window.confirm('Reopen this inspection for editing? The sign-off date will be cleared.')) {
+    const reason = window.prompt(
+      'Reopening a signed inspection is recorded permanently. Why is it being reopened?',
+    );
+    if (reason === null) return;
+    if (!reason.trim()) {
+      alert('A reason is required to reopen a signed inspection.');
       return;
     }
-    updateInspection(inspection.id, { status: 'in-progress', completedAt: undefined });
+    updateInspection(inspection.id, {
+      status: 'in-progress',
+      completedAt: undefined,
+      reopenings: [
+        ...(inspection.reopenings ?? []),
+        { reason: reason.trim(), at: new Date().toISOString(), by: profile?.email },
+      ],
+    });
   }
 
   return (
@@ -222,6 +241,25 @@ export function ReportScreen() {
             </ReportSection>
           );
         })}
+
+        {inspection.reopenings?.length ? (
+          <ReportSection
+            title="Reopened after signing"
+            meta={<Badge tone="warn">{inspection.reopenings.length}</Badge>}
+          >
+            <ul className="flex flex-col divide-y divide-ink-100">
+              {inspection.reopenings.map((entry, index) => (
+                <li key={`${entry.at}-${index}`} className="py-2.5 break-inside-avoid first:pt-0">
+                  <p className="text-[14px] leading-snug text-ink-800">{entry.reason}</p>
+                  <p className="mt-0.5 text-xs text-ink-500">
+                    {formatDateTime(entry.at)}
+                    {entry.by ? ` · ${entry.by}` : ''}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </ReportSection>
+        ) : null}
 
         <ReportSection title="Signatures">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">

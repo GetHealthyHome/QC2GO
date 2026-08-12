@@ -3,6 +3,8 @@ import { useStore } from './lib/store';
 import { useAuth } from './lib/auth';
 import { SignInScreen } from './screens/SignInScreen';
 import { NoOrganizationScreen } from './screens/NoOrganizationScreen';
+import { SetPasswordScreen } from './screens/SetPasswordScreen';
+import { PeopleScreen } from './screens/PeopleScreen';
 import { HomeScreen } from './screens/HomeScreen';
 import { CustomerFormScreen } from './screens/CustomerFormScreen';
 import { CustomerScreen } from './screens/CustomerScreen';
@@ -38,6 +40,14 @@ export default function App() {
     return <SignInScreen />;
   }
 
+  // Arrived through an invitation link. They are signed in, but only for as
+  // long as this session lasts — a password is what gets them back in tomorrow.
+  // Asked before anything else, and before the no-company screen, because an
+  // invited account has a company by definition.
+  if (auth.enabled && auth.session && auth.needsPassword) {
+    return <SetPasswordScreen />;
+  }
+
   // An account exists but belongs to no company. Row-level security would show
   // it an empty app; say so rather than letting it look like lost data.
   if (auth.enabled && auth.profile && !auth.profile.organization) {
@@ -62,6 +72,7 @@ export default function App() {
         <Route path="/checklists/shared" element={<SharedEditorScreen />} />
         <Route path="/checklists/:templateId" element={<ChecklistEditorScreen />} />
         <Route path="/settings" element={<SettingsScreen />} />
+        <Route path="/people" element={<PeopleScreen />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>

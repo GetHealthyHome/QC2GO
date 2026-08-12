@@ -34,7 +34,7 @@ reported. It is not yet the platform around that slice.
 | 1 — Template Builder & Field Types | **~40%** | Full section/checkpoint authoring with versioned snapshots; 3 question types against the TRD's 15+, and no conditional logic, repeatable sections, or formulas. |
 | 2 — Evidence Capture & Media | **~25%** | Photos captured, downscaled, stored offline and rendered into the report. No annotation, no watermarking, no video/audio, no barcode, no AI. |
 | 3 — KYPiT Verification | **~5%** | Nothing of the risk engine exists. GPS is captured on the customer record, not on the evidence. |
-| 4 — Scoring, Workflows & Automation | **~35%** | A real scoring model with critical-failure override and hard sign-off blockers. No tasks, no punch list, no approval chain, no triage queue. |
+| 4 — Scoring, Workflows & Automation | **~40%** | A real scoring model with critical-failure override and hard sign-off blockers. No tasks, no punch list, no approval chain, no triage queue. |
 | 5 — Teams, Security & Access | **~60%** | Supabase auth, per-company tenancy with three roles, row-level security proven by an isolation suite, invitation-based onboarding, tombstoned deletes. No second (team) role layer, no external sharing, no SSO, no audit ledger. |
 | 6 — Reports, Exports & Integrations | **~25%** | Print-to-PDF report and JSON export; a Postgres summary view for the office. No branded layout engine, no .docx/.xlsx, no webhooks, no cloud sync. |
 
@@ -64,13 +64,13 @@ because Module 2 and Module 3 both depend on it.
 (`src/lib/sync.ts`). Functionally equivalent and correct for the platform choice
 — treat the TRD's "SQLite" as descriptive, not prescriptive.
 
-**No middleware tier.** The TRD's architecture diagram puts an API Gateway
-between clients and services. QC2GO talks to Supabase directly from the browser,
-with row-level security as the boundary. Everything in the TRD that needs
-server-side compute — KYPiT, AI, PDF/DOCX rendering, webhooks, cloud sync,
-scheduled reports — has **no home to live in yet**. This is the single largest
-structural gap, and it blocks roughly half the remaining TRD by itself. Supabase
-Edge Functions are the natural answer and require no new infrastructure.
+**A thin middleware tier, newly.** The TRD's architecture diagram puts an API
+Gateway between clients and services. QC2GO talks to Supabase directly from the
+browser with row-level security as the boundary, and that remains the right
+default — but `supabase/functions/invite-user` established the server tier that
+everything needing real compute was queued behind: webhooks, PDF/DOCX rendering,
+cloud sync, scheduled reports, any KYPiT signal. Each of those is now an Edge
+Function to write rather than a piece of architecture to decide.
 
 **Multi-tenant, as of `0004_organizations.sql`.** This was the largest gap in the
 first draft of this document and is now closed. Every tenant-owned table carries
@@ -156,7 +156,7 @@ against adversarial external submitters.
 | Tasks & work orders, `New → Assigned → To Do → In Progress → Done → Verified` | **Gap** | No task entity exists. |
 | Punch lists & deficiency tracking to sign-off | **Partial** | The raw material is all there: `deficiencies()` (`src/lib/inspection.ts:95`) lists every failure with its photo and explanation, a `punch-recheck` visit type exists, and `Response.resolved` is modelled. What is missing is the cross-inspection view — "everything still open on this job" — and any assignment to a person or subcontractor. **Closing this is the highest-value item in Module 4** and reuses code that already exists. |
 | Custom statuses & approval routing (`Submitted → QA Review → Client Approved → Archived`) | **Gap** | `InspectionStatus` is `in-progress \| completed` (`src/lib/types.ts:151`). |
-| Inspection locking with rationale log on override | **Partial** | See Module 3 — locks, but no rationale, no ledger. |
+| Inspection locking with rationale log on override | **Built** | A completed inspection is read-only in the app and the server refuses edits to one from anybody but an admin. Unlocking now requires a reason (`src/screens/ReportScreen.tsx`), shows it on the report from then on, and a trigger copies it into `audit_log` — a table with a select policy and no insert, update or delete policy at all, so only a `security definer` trigger can write it and nothing can change it. |
 | Daily activity reports (batch PDF, emailed/webhooked) | **Gap** | Needs the server tier. |
 | Hard sign-off blockers | **Built — beyond the TRD** | `completionBlockers` (`src/lib/inspection.ts:142`) refuses sign-off until every required info field is filled, every checkpoint answered, **every No carries both a written explanation and a photo**, and both required signatures are present — each blocker deep-linking back to its question. The TRD never asks for this; it is the strongest thing in the app. |
 
@@ -169,11 +169,11 @@ against adversarial external submitters.
 | Organizations as the tenancy boundary | **Built** | `organizations`, and `org_id` on every tenant-owned table (`supabase/migrations/0004_organizations.sql`). One company per account — `profiles.org_id` — so every policy is a single scalar comparison rather than a join. An account with no company sees an empty app and is told why. |
 | Org roles: Owner / Super Admin / Admin / Member | **Partial** | Three of the four: `owner`, `admin`, `inspector`. Owner manages members and the company; admin authors checklists and amends signed records. Super Admin has no equivalent and no current need. |
 | Team roles: Team Admin / Contributor / Focused Access / Viewer | **Gap** | There is one role layer, not two. Teams inside a company are not modelled. |
-| Provisioning and onboarding | **Built** | A company is created deliberately in SQL; its owner then invites staff by email address, and the signup trigger binds the new account to that company with that role. No invitation means no company. The invitation *sending* still needs an Edge Function — see `supabase/README.md`. |
+| Provisioning and onboarding | **Built** | A company is created deliberately in SQL; from there its owner invites staff from Settings → People. The `invite-user` Edge Function sends the email, and the signup trigger binds the new account to that company with that role. No invitation means no company. |
 | Third-party sharing — Assignee / Collaborator / Viewer, secure link over email/SMS, expiry, passcode | **Gap** | Nothing leaves the app except a printed PDF or a JSON file. A read-only expiring link to a finished report is the obvious first piece and the one a customer would actually use. |
 | SSO — SAML 2.0 / OIDC, OTP, OAuth | **Partial** | Supabase email + password, admin-provisioned, no self-signup. Supabase supports OAuth and OTP with configuration; SAML needs a paid tier. |
 | SOC 2 Type II, annual pen testing | **Gap** | Organizational, not code. |
-| Field-level immutable audit log (who, what, when, old, new) | **Gap** | Deletes leave tombstones written by trigger (`supabase/migrations/0003_sync.sql`) — good, and the right instinct — but updates overwrite in place with no history. |
+| Field-level immutable audit log (who, what, when, old, new) | **Partial** | `audit_log` (`0006`) exists and is genuinely append-only, but it records one action: a signed inspection being unlocked. Deletes leave tombstones (`0003`). Ordinary updates still overwrite in place with no history — the table is now there to extend rather than to build. |
 | Tenant isolation is verified, not assumed | **Built — beyond the TRD** | `npm run check:migrations` applies every migration to a real PostgreSQL, then attempts as one company to read, update, delete and insert into another's customers, inspections, roster, shared config, tombstones and photo bucket. CI runs it on every pull request. The TRD asks for SOC 2 and annual pen testing; this is the part of that promise that can be kept in the repository. |
 | Auth cannot be silently absent in production | **Built — beyond the TRD** | The app runs local-only without Supabase env vars, which is convenient and dangerous; a **Local mode** banner makes it visible, and CI builds a configured copy on every PR and asserts nothing is reachable without signing in (`npm run check:auth-gate`). |
 
@@ -343,6 +343,33 @@ exists. What landed, and what it changed in the tables above:
   signed-in caller to any object in it.
 - A migration and isolation suite in CI that creates two companies and tries to
   cross between them.
+
+**`0006_audit_log.sql` — reopening leaves a mark.** Unlocking a signed record
+took no reason and wrote nothing anywhere, so a QC record could be amended with
+no trace of who did it or why. It now needs a reason, shows it on the report, and
+a trigger copies it into a ledger with no write policy of any kind.
+
+The two-copy shape is the interesting part, and it comes from this app working
+offline: the reason lands on the inspection so it can be written with no signal
+and read anywhere, and the server keeps its own copy when the change syncs up.
+The first is convenient; the second is the evidence.
+
+**The invite flow — `invite-user` and Settings → People.** Provisioning a company
+was a SQL statement and so was every account in it. An owner now invites staff
+from inside the app: the Edge Function verifies them, writes the invitation and
+sends the email; following the link signs the account in and asks for a password
+before anything else.
+
+Two things fell out of it worth recording:
+
+- **PKCE, not the implicit auth flow.** Supabase's default returns the session in
+  the URL fragment, which is the same fragment `HashRouter` uses for its routes.
+  They collide, and an invitation link would either sign nobody in or navigate
+  nowhere. PKCE returns `?code=` in the query string, which nothing competes for.
+- **The service-role key needs a different kind of test.** Everywhere else a
+  mistake is caught by a policy; the invite function has none underneath it. So
+  its decision is a pure function with its own suite, whose central case is that
+  a request body cannot name the company it is inviting into.
 
 **`0005_branding.sql` — per-company letterhead.** The report was headed with a
 per-device value each inspector typed in themselves, so one crew could hand out

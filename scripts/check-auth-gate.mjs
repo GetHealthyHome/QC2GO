@@ -31,13 +31,26 @@ check(
 );
 check('no local-mode banner when configured', !text.includes('Local mode'));
 
-await p.goto((process.env.AUTH_URL ?? 'http://localhost:4174') + '/#/settings', { waitUntil: 'networkidle' });
+const BASE = process.env.AUTH_URL ?? 'http://localhost:4174';
+
+await p.goto(BASE + '/#/settings', { waitUntil: 'networkidle' });
 await p.waitForTimeout(1000);
 const deep = await p.locator('body').innerText();
 check(
   'deep link to /settings is gated',
   deep.includes('Sign in') && !deep.includes('Manage checklists'),
   JSON.stringify(deep.slice(0, 90)),
+);
+
+// The roster names every account in the company and is the one screen where a
+// leak would hand over a list of people rather than a single record.
+await p.goto(BASE + '/#/people', { waitUntil: 'networkidle' });
+await p.waitForTimeout(1000);
+const people = await p.locator('body').innerText();
+check(
+  'deep link to /people is gated',
+  people.includes('Sign in') && !people.includes('In the company'),
+  JSON.stringify(people.slice(0, 90)),
 );
 
 await p.getByLabel('Email').fill('nobody@example.com');

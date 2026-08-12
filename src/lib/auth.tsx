@@ -38,6 +38,13 @@ interface AuthValue {
   signOut: () => Promise<void>;
   /** Owners only — the server refuses it from anybody else. */
   updateOrganization: (patch: Partial<Organization>) => Promise<{ error?: string }>;
+  /**
+   * True when this account arrived through an invitation and has not chosen a
+   * password yet. Following the link signs them in; it does not give them a way
+   * back in tomorrow.
+   */
+  needsPassword: boolean;
+  setPassword: (password: string) => Promise<{ error?: string }>;
 }
 
 const ROLES: Role[] = ['owner', 'admin', 'inspector'];
@@ -163,6 +170,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
   }, []);
 
+  const setPassword = useCallback<AuthValue['setPassword']>(async (password) => {
+    if (!supabase) return { error: 'Sign-in is not configured on this deployment.' };
+    const { error } = await supabase.auth.updateUser({
+      password,
+      // Clearing the flag is part of the same write as setting the password, so
+      // there is no window where one landed and the other did not.
+      data: { needs_password: false },
+    });
+    if (error) return { error: authErrorMessage(error.message) };
+    // `updateUser` returns the updated user but does not always re-emit the
+    // session, and the flag is read off the session. Refresh it so the app
+    // stops asking.
+    await supabase.auth.refreshSession();
+    return {};
+  }, []);
+
   const updateOrganization = useCallback<AuthValue['updateOrganization']>(
     async (patch) => {
       if (!supabase || !profile?.organization) {
@@ -199,8 +222,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       signIn,
       signOut,
       updateOrganization,
+      needsPassword: session?.user?.user_metadata?.needs_password === true,
+      setPassword,
     }),
-    [ready, session, profile, signIn, signOut, updateOrganization],
+    [ready, session, profile, signIn, signOut, updateOrganization, setPassword],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

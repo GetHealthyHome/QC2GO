@@ -193,6 +193,66 @@ check('deficiency photo persisted', photoCount >= 1, photoCount);
 check('both signatures persisted', sigCount === 2, sigCount);
 await shot('15-report-after-reload', true);
 
+// --- reopening a signed record demands a reason and keeps it ---
+//
+// This is the one action in the app that rewrites history, so the interesting
+// case is the refusal: cancelling, or entering nothing, must leave the record
+// signed.
+console.log('--- reopening a signed inspection ---');
+
+/**
+ * Answer a run of dialogs in order. `page.once` will not do: several one-time
+ * listeners all fire on the *first* dialog, so the second one finds it already
+ * handled. `null` dismisses, a string accepts a prompt with that text, and
+ * `true` accepts an alert.
+ */
+async function withDialogs(answers, action) {
+  let next = 0;
+  const handler = async (dialog) => {
+    const answer = answers[next++];
+    if (answer === null || answer === undefined) await dialog.dismiss();
+    else if (answer === true) await dialog.accept();
+    else await dialog.accept(answer);
+  };
+  page.on('dialog', handler);
+  try {
+    await action();
+    await page.waitForTimeout(500);
+  } finally {
+    page.off('dialog', handler);
+  }
+}
+
+const reopenButton = page.getByRole('button', { name: /Reopen for editing/ });
+
+await withDialogs([null], () => reopenButton.click());
+check(
+  'cancelling the reason leaves the record signed',
+  (await page.locator('body').innerText()).includes('Completed'),
+);
+
+// An empty reason is refused the same way — the prompt, then the alert saying why.
+await withDialogs(['', true], () => reopenButton.click());
+check(
+  'an empty reason is refused',
+  (await page.locator('body').innerText()).includes('Completed'),
+);
+
+const REASON = 'Permit number was captured from the wrong job';
+await withDialogs([REASON], () => reopenButton.click());
+
+// Straight to the report route: the record is in progress again now, so the
+// bare inspection URL lands on the runner rather than redirecting here.
+await page.goto(inspectionUrl + '/report', { waitUntil: 'networkidle' });
+await page.reload({ waitUntil: 'networkidle' });
+await page.waitForTimeout(900);
+const reopened = await page.locator('body').innerText();
+check('the reason is recorded on the report', reopened.includes(REASON));
+// Section headings are uppercased by CSS, and innerText reports what is
+// rendered rather than what is in the markup.
+check('the report says it was reopened', /reopened after signing/i.test(reopened));
+await shot('15b-reopened', true);
+
 // --- admin checklist editor ---
 await page.goto(BASE + '/#/settings', { waitUntil: 'networkidle' });
 await page.getByRole('button', { name: /^Admin/ }).click();

@@ -164,6 +164,30 @@ export function SettingsScreen() {
           </p>
         ) : null}
 
+        {auth.enabled && auth.profile?.organization ? (
+          <>
+            <h2 className="mt-8 mb-2.5 px-1 text-[13px] font-bold tracking-wide text-ink-500 uppercase">
+              People
+            </h2>
+            <Card className="active:bg-ink-50">
+              <Link to="/people" className="flex items-center gap-3 p-4">
+                <UserIcon className="size-5 shrink-0 text-ink-300" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[15px] font-semibold text-ink-900">
+                    {auth.profile.role === 'owner' ? 'Invite and manage people' : 'Who is in the company'}
+                  </p>
+                  <p className="text-xs text-ink-500">
+                    {auth.profile.organization.name}
+                    {auth.profile.role === 'owner' ? ' · send invitations, set roles' : ''}
+                  </p>
+                </div>
+                {auth.profile.role === 'owner' ? <Badge tone="brand">Owner</Badge> : null}
+                <ChevronRightIcon className="size-5 shrink-0 text-ink-300" />
+              </Link>
+            </Card>
+          </>
+        ) : null}
+
         {auth.profile?.role === 'owner' && auth.profile.organization ? (
           <>
             <h2 className="mt-8 mb-2.5 px-1 text-[13px] font-bold tracking-wide text-ink-500 uppercase">
@@ -176,11 +200,12 @@ export function SettingsScreen() {
         {isAdmin ? (
           <>
             <h2 className="mt-8 mb-2.5 px-1 text-[13px] font-bold tracking-wide text-ink-500 uppercase">
-              People
+              Name lists
             </h2>
             <p className="mb-2.5 px-1 text-[13px] text-ink-500">
               These become the Salesperson and Team Leader dropdowns on every customer, so field
-              staff pick a name instead of typing one.
+              staff pick a name instead of typing one. They are plain names, not accounts — for
+              accounts see People above.
             </p>
             <div className="flex flex-col gap-2.5">
               <NameList

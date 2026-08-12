@@ -150,6 +150,22 @@ export interface SignatureRecord {
 
 export type InspectionStatus = 'in-progress' | 'completed';
 
+/**
+ * One unlocking of a signed inspection.
+ *
+ * Captured on the record rather than sent to a server, because the app has to
+ * work with no signal — and because a reason that only exists on a server is
+ * one an inspector reading the report in a basement cannot see. The server
+ * keeps its own copy in an append-only ledger when the change syncs up, which
+ * is the half that cannot be edited away.
+ */
+export interface ReopenRecord {
+  reason: string;
+  at: string;
+  /** Account that reopened it. Absent on local-only data. */
+  by?: string;
+}
+
 export interface Inspection {
   id: string;
   customerId: string;
@@ -169,6 +185,8 @@ export interface Inspection {
   summaryNotes?: string;
   inspectorSignature?: SignatureRecord;
   customerSignature?: SignatureRecord;
+  /** Every time this record was unlocked after signing, and why. Append-only. */
+  reopenings?: ReopenRecord[];
   /** Account that ran the inspection. The server only lets its author edit it. */
   createdBy?: string;
   createdAt: string;

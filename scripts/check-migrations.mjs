@@ -125,6 +125,7 @@ const TENANT_TABLES = [
   'inspections',
   'photos',
   'tombstones',
+  'audit_log',
 ];
 
 check('every tenant table carries org_id', () => {
@@ -202,6 +203,7 @@ check('storage policies check the org prefix', () => {
 
 const ACME = '11111111-1111-1111-1111-111111111111';
 const BETA = '22222222-2222-2222-2222-222222222222';
+const ACME_ADMIN = '66666666-6666-6666-6666-666666666666';
 
 psql(`
   insert into auth.users (id, email) values
@@ -231,6 +233,14 @@ check('the signup trigger created a profile for each account', () => {
   return count === '2' ? null : `expected 2 profiles, found ${count}`;
 });
 
+// An admin at Acme, used by several checks below. Created through the
+// invitation path rather than by hand, so it also exercises that path.
+psql(`
+  insert into public.invites (org_id, email, role, invited_by)
+  values ('aaaaaaaa-0000-0000-0000-000000000001', 'admin@acme.test', 'admin', '${ACME}');
+  insert into auth.users (id, email) values ('${ACME_ADMIN}', 'admin@acme.test');
+`);
+
 check('a company sees only its own customers', () => {
   const rows = tx(ACME, `select id from public.customers order by id;`);
   return rows === 'cust-acme' ? null : `Acme sees: ${rows.replace(/\n/g, ', ') || '(nothing)'}`;
@@ -242,8 +252,14 @@ check('a company sees only its own inspections', () => {
 });
 
 check('a company cannot read another roster', () => {
-  const rows = tx(ACME, `select email from public.profiles order by email;`);
-  return rows === 'owner@acme.test' ? null : `Acme sees: ${rows.replace(/\n/g, ', ') || '(nothing)'}`;
+  // Acme's own membership grows as later fixtures are added, so the assertion
+  // is about who is absent rather than an exact roll call.
+  const rows = tx(ACME, `select email from public.profiles order by email;`)
+    .split('\n')
+    .filter(Boolean);
+  const foreign = rows.filter((email) => !email.endsWith('@acme.test'));
+  if (foreign.length > 0) return `Acme sees: ${foreign.join(', ')}`;
+  return rows.includes('owner@acme.test') ? null : 'Acme cannot see its own owner';
 });
 
 check('a company cannot see another organization', () => {
@@ -352,6 +368,108 @@ check('a profile can read its own organization alongside itself', () => {
   return row === 'owner@acme.test @ Acme QC' ? null : `got: ${row || '(nothing)'}`;
 });
 
+check('reopening a signed inspection writes a ledger row', () => {
+  psql(`
+    insert into public.inspections (id, org_id, customer_id, snapshot, visit_type, status, created_by, completed_at)
+    values ('insp-signed', 'aaaaaaaa-0000-0000-0000-000000000001', 'cust-acme', '{}',
+            'final-walkthrough', 'completed', '${ACME}', now());`);
+
+  tx(
+    ACME,
+    `update public.inspections
+        set status = 'in-progress',
+            completed_at = null,
+            reopenings = '[{"reason":"Wrong permit number captured","at":"2026-08-12T00:00:00Z"}]'
+      where id = 'insp-signed';`,
+  );
+
+  const row = psql(`
+    select action || ' | ' || coalesce(reason, '(none)') || ' | ' || coalesce(actor_email, '(nobody)')
+      from public.audit_log where entity_id = 'insp-signed';`);
+  return row === 'reopen | Wrong permit number captured | owner@acme.test'
+    ? null
+    : `ledger says: ${row || '(nothing)'}`;
+});
+
+check('an ordinary edit does not write a ledger row', () => {
+  // The trigger fires on every update. Firing on the wrong ones would bury the
+  // reopenings in noise, which is the same as not recording them.
+  const before = psql(`select count(*) from public.audit_log;`);
+  tx(ACME, `update public.inspections set summary_notes = 'ordinary edit' where id = 'insp-signed';`);
+  const after = psql(`select count(*) from public.audit_log;`);
+  return before === after ? null : `the ledger grew from ${before} to ${after}`;
+});
+
+check('nobody can edit or delete a ledger row', () => {
+  // There is deliberately no update or delete policy, so both match no rows
+  // rather than raising. Silence is the expected answer; a changed row is not.
+  tx(ACME, `update public.audit_log set reason = 'something more flattering';`);
+  tx(ACME, `delete from public.audit_log;`);
+  const row = psql(`select coalesce(reason, '') from public.audit_log where entity_id = 'insp-signed';`);
+  return row === 'Wrong permit number captured' ? null : `the ledger now says: "${row}"`;
+});
+
+check('nobody can forge a ledger row', () => {
+  const result = tx(
+    ACME,
+    `insert into public.audit_log (org_id, entity, entity_id, action)
+     values ('aaaaaaaa-0000-0000-0000-000000000001', 'inspection', 'insp-acme', 'invented');`,
+    { expectError: true },
+  );
+  return result?.error ? null : 'a client wrote straight into the ledger';
+});
+
+check('one company cannot read another\'s ledger', () => {
+  const seen = tx(BETA, `select entity_id from public.audit_log;`);
+  return seen.includes('insp-signed') ? 'Beta can read Acme\'s audit trail' : null;
+});
+
+check('an owner can withdraw an invitation, an admin cannot', () => {
+  // The Edge Function creates invitations with the service key, but listing and
+  // withdrawing them happen straight from the app through these policies.
+  psql(`insert into public.invites (id, org_id, email, role, invited_by)
+        values ('11111111-aaaa-aaaa-aaaa-111111111111',
+                'aaaaaaaa-0000-0000-0000-000000000001', 'withdraw@acme.test', 'inspector', '${ACME}');`);
+
+  // An admin may see who is outstanding...
+  const seen = tx(ACME_ADMIN, `select email from public.invites where accepted_at is null;`);
+  if (!seen.includes('withdraw@acme.test')) return 'an admin cannot see pending invitations';
+
+  // ...but not withdraw one.
+  tx(ACME_ADMIN, `delete from public.invites where id = '11111111-aaaa-aaaa-aaaa-111111111111';`);
+  const afterAdmin = psql(
+    `select count(*) from public.invites where id = '11111111-aaaa-aaaa-aaaa-111111111111';`,
+  );
+  if (afterAdmin !== '1') return 'an admin withdrew an invitation';
+
+  tx(ACME, `delete from public.invites where id = '11111111-aaaa-aaaa-aaaa-111111111111';`);
+  const afterOwner = psql(
+    `select count(*) from public.invites where id = '11111111-aaaa-aaaa-aaaa-111111111111';`,
+  );
+  return afterOwner === '0' ? null : 'an owner could not withdraw an invitation';
+});
+
+check('one company cannot see or touch another\'s invitations', () => {
+  psql(`insert into public.invites (id, org_id, email, role, invited_by)
+        values ('22222222-bbbb-bbbb-bbbb-222222222222',
+                'aaaaaaaa-0000-0000-0000-000000000001', 'secret@acme.test', 'admin', '${ACME}');`);
+
+  const seen = tx(BETA, `select email from public.invites;`);
+  if (seen.includes('secret@acme.test')) return 'Beta can read Acme\'s invitations';
+
+  tx(BETA, `delete from public.invites where id = '22222222-bbbb-bbbb-bbbb-222222222222';`);
+  const left = psql(
+    `select count(*) from public.invites where id = '22222222-bbbb-bbbb-bbbb-222222222222';`,
+  );
+  return left === '1' ? null : 'Beta withdrew Acme\'s invitation';
+});
+
+check('an inspector cannot read invitations at all', () => {
+  const crew = '55555555-5555-5555-5555-555555555555';
+  const seen = tx(crew, `select count(*) from public.invites;`);
+  return seen === '0' ? null : `an inspector sees ${seen} invitations`;
+});
+
 check('an owner can set their own company logo', () => {
   tx(ACME, `update public.organizations set logo = 'data:image/png;base64,AAAA'
              where id = 'aaaaaaaa-0000-0000-0000-000000000001';`);
@@ -361,12 +479,7 @@ check('an owner can set their own company logo', () => {
 });
 
 check('an admin cannot set the company logo', () => {
-  const admin = '66666666-6666-6666-6666-666666666666';
-  psql(`
-    insert into public.invites (org_id, email, role, invited_by)
-    values ('aaaaaaaa-0000-0000-0000-000000000001', 'admin@acme.test', 'admin', '${ACME}');
-    insert into auth.users (id, email) values ('${admin}', 'admin@acme.test');`);
-  tx(admin, `update public.organizations set logo = 'data:image/png;base64,BBBB'
+  tx(ACME_ADMIN, `update public.organizations set logo = 'data:image/png;base64,BBBB'
               where id = 'aaaaaaaa-0000-0000-0000-000000000001';`);
   const logo = psql(`select logo from public.organizations
                       where id = 'aaaaaaaa-0000-0000-0000-000000000001';`);

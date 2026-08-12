@@ -96,6 +96,10 @@ const inspection = {
     q2: { answer: 'yes', photoIds: [] },
   },
   summaryNotes: 'Punch list issued to crew.',
+  // Stated rather than left out: this fixture is an inspection that was never
+  // reopened, and a round trip has to produce exactly that rather than an
+  // empty array. `deepStrictEqual` tells the two apart.
+  reopenings: undefined,
   inspectorSignature: { name: 'Sam Okafor', dataUrl: 'data:image/png;base64,AAA', signedAt: '2026-08-11T16:00:00.000Z' },
   customerSignature: { name: 'Ada Whitfield', dataUrl: 'data:image/png;base64,BBB', signedAt: '2026-08-11T16:01:00.000Z' },
   createdBy: USER,
@@ -119,6 +123,20 @@ check('a No answer keeps its explanation and its photo', () => {
   const back = m.rowToInspection(m.inspectionToRow(inspection, USER, ORG));
   assert.equal(back.responses.q1.note, 'Rim joist left open at the south wall.');
   assert.deepEqual(back.responses.q1.photoIds, ['img-1']);
+});
+
+check('reopenings round trip, and stay absent when there are none', () => {
+  const back = m.rowToInspection(m.inspectionToRow(inspection, USER, ORG));
+  assert.equal(back.reopenings, undefined, 'never reopened must round-trip to never reopened');
+
+  const reopened = {
+    ...inspection,
+    reopenings: [
+      { reason: 'Wrong permit number captured', at: '2026-08-12T09:00:00.000Z', by: 'boss@co.test' },
+    ],
+  };
+  const there = m.rowToInspection(m.inspectionToRow(reopened, USER, ORG));
+  assert.deepEqual(there.reopenings, reopened.reopenings);
 });
 
 check('the checklist id travels as written', () => {

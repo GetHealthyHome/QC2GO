@@ -1,6 +1,6 @@
 # Supabase backend
 
-Five migrations:
+Six migrations:
 
 - **`0001_init.sql`** — tables, roles, row-level security, the photo storage
   bucket, and an office summary view.
@@ -16,11 +16,13 @@ Five migrations:
   signed in?" to "is this row theirs?".
 - **`0005_branding.sql`** — the company logo, so a report carries the mark of the
   company handing it over.
+- **`0006_audit_log.sql`** — an append-only ledger, and the reason a signed
+  inspection was unlocked.
 
-All five are replayed end-to-end from an empty PostgreSQL 16 database on every
+All six are replayed end-to-end from an empty PostgreSQL 16 database on every
 pull request, along with a two-company isolation suite — see
 [Proving the boundary](#proving-the-boundary). `0001` through `0004` are applied
-to the live project; `0005` applies on merge.
+to the live project; `0005` and `0006` apply on merge.
 
 ## Setting it up
 
@@ -80,22 +82,76 @@ values ('Northeast Home Services', 'northeast-home')
 returning id;
 ```
 
-Then invite its owner. Once an owner exists they invite the rest of their staff
-themselves, and you are out of the loop:
+Then invite its owner:
 
 ```sql
 insert into public.invites (org_id, email, role)
 values ('<the org id>', 'owner@northeast-home.com', 'owner');
 ```
 
-The person then signs up with that exact address under **Authentication →
-Users** (or through an invitation email, once that is wired up). The signup
-trigger reads the pending invitation, puts the new profile in that company with
-that role, and marks the invitation accepted. **No invitation means no company** —
-the account is created and sees nothing.
+and create the account with that exact address under **Authentication → Users**.
+
+**That is the only step you take.** From there the owner invites the rest of
+their staff from **Settings → People** inside the app, and you are out of the
+loop entirely.
+
+### How an invitation works
+
+An owner enters an address and a role. The `invite-user` Edge Function writes the
+`invites` row and sends the email; following the link signs the account in and
+the app asks for a password before anything else.
+
+The signup trigger is what binds the two together: it reads any live invitation
+for the new address, puts the profile in that company with that role, and marks
+the invitation accepted. **No invitation means no company** — the account is
+created and sees nothing, which is the safe direction to fail in.
 
 Invitations expire after 14 days, and only one can be live per address at a time
-across the whole platform, since an account belongs to one company.
+across the whole platform, since an account belongs to one company. An expired
+one is cleared out when the same address is invited again, rather than reported
+as a conflict nobody can resolve.
+
+## Edge Functions
+
+`supabase/functions/` holds the server-side code. There is one function today.
+
+### `invite-user`
+
+The only part of QC2GO that runs with the `service_role` key — it needs the
+admin API to send an invitation email, and that key bypasses row-level security
+entirely. It must never reach a browser, which is why this runs on a server and
+the client only asks.
+
+Because the key bypasses RLS, nothing underneath the function catches a mistake
+in it. Two habits guard against that:
+
+1. **The caller is read back with their own token**, not the service key, so who
+   they are and which company they are in is answered by the same policies that
+   answer it everywhere else.
+2. **The decision is a pure function** (`invite-user/authorize.ts`), tested
+   directly by `npm run check:invite-authorization` — including the case that
+   matters most, which is that a request body cannot name the company it is
+   inviting into. The organization always comes from the caller's own profile
+   row; a company named in a request is a claim with nothing behind it.
+
+Deploy it, and set where its invitation links should land:
+
+```bash
+supabase functions deploy invite-user
+supabase secrets set QC2GO_SITE_URL=https://your-deployment.vercel.app
+```
+
+`SUPABASE_URL`, `SUPABASE_ANON_KEY` and `SUPABASE_SERVICE_ROLE_KEY` are provided
+to the function automatically.
+
+Without `QC2GO_SITE_URL` the invitation link points at Supabase's own default and
+the person never reaches the app.
+
+### One thing to check in the dashboard
+
+Under **Authentication → URL Configuration**, add the deployment origin to
+**Redirect URLs**. Supabase refuses to redirect anywhere not on that list, and
+the failure looks like an invitation link that simply does not work.
 
 ### Branding
 
@@ -177,6 +233,18 @@ addressable either.
 **`inspection_summary`** is one row per inspection with pass/fail/N-A counts
 computed from the responses JSON — the view to point a dashboard or a Google
 Sheets mirror at.
+
+**`audit_log`** is where a signed inspection being unlocked is recorded. It is
+append-only in the strongest sense the database offers: there is a select policy
+and **no insert, update or delete policy at all**, so the only thing that can add
+a row is a `security definer` trigger and nothing whatsoever can change or remove
+one.
+
+The reason itself is captured twice on purpose. `inspections.reopenings` holds it
+on the record — writable offline, carried by the ordinary sync, and shown on the
+report wherever it is read. The trigger copies each new entry into the ledger
+when the change reaches the server. The first copy is the convenient one and the
+second is the evidence.
 
 **`tombstones`** records what was deleted, so a device that was offline at the
 time finds out. Readable inside the company that owns the deleted row and
@@ -292,17 +360,6 @@ and back. A column renamed in a migration but not in `src/lib/syncMap.ts` is not
 a type error — the field simply arrives back empty — and this is what catches it.
 
 ## Still to build
-
-**Sending the invitation.** The invitation *mechanism* is complete — the row,
-the expiry, the signup trigger that binds a new account to it. What is missing is
-the part that emails a link and lets someone set a password from it. Supabase's
-`inviteUserByEmail` needs the `service_role` key, which must never reach a
-browser, so this needs an Edge Function. Until then an owner adds the invitation
-row and the person is created under **Authentication → Users**.
-
-**An owner-facing People screen.** Creating an invitation is a SQL statement
-today. It should be a form, with the pending list beside it — the policies for
-both are already in place.
 
 **Storage cleanup for abandoned uploads.** A photo whose row upload fails after
 the file has already gone to the bucket leaves the file behind. Rare, and it

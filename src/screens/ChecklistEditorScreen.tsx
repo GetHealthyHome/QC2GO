@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useStore, useTemplate } from '../lib/store';
 import { blankSection, moveItem } from '../lib/checklist';
+import { isYesNo } from '../lib/inspection';
 import type { Section, Template } from '../lib/types';
 import { SectionEditor } from '../components/SectionEditor';
 import { Button, Card, Field, Screen, TextInput, TopBar, inputClass } from '../components/ui';
@@ -152,6 +153,12 @@ export function ChecklistEditorScreen() {
               total={draft.sections.length}
               readOnly={!isAdmin}
               open={openSection === section.id}
+              // Everything askable above this section. A condition may only
+              // point backwards, which is what makes a loop unauthorable.
+              priorQuestions={draft.sections
+                .slice(0, index)
+                .flatMap((earlier) => earlier.questions)
+                .filter(isYesNo)}
               onToggle={() =>
                 setOpenSection((current) => (current === section.id ? null : section.id))
               }

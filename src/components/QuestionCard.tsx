@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { Answer, Inspection, Question, Response } from '../lib/types';
-import { getResponse, isScored } from '../lib/inspection';
+import { getResponse, isScored, isYesNo } from '../lib/inspection';
 import { countCodes, mergeCodes, scanningSupported } from '../lib/barcode';
 import { AddPhotoButton, PhotoThumb } from './Photos';
 import { BarcodeScanner } from './BarcodeScanner';
@@ -131,7 +131,7 @@ export function QuestionCard({
   const response = getResponse(inspection, question.id, instanceId);
   const [showOptional, setShowOptional] = useState(false);
 
-  if (!isScored(question)) {
+  if (!isYesNo(question)) {
     return (
       <MeasurementCard
         index={index}
@@ -143,7 +143,10 @@ export function QuestionCard({
     );
   }
 
-  const failed = response.answer === 'no';
+  // A No on a fact about the job is the answer, not a failure — no red border,
+  // no deficiency block, nothing to explain or photograph. Only a failed
+  // standard owes evidence.
+  const failed = response.answer === 'no' && isScored(question);
   const needsNote = failed && !response.note?.trim();
   const needsPhoto = failed && response.photoIds.length === 0;
   const wantsEvidence = response.answer === 'yes' && question.photoOnPass;

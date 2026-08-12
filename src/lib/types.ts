@@ -38,6 +38,49 @@ export interface Question {
    * anything new having to learn about them.
    */
   scannable?: boolean;
+  /** Ask this only when another checkpoint was answered a particular way. */
+  showIf?: Condition;
+  /**
+   * A fact about the job rather than a standard it has to meet.
+   *
+   * "Gas-fired appliance on site" is the shape of question a condition hangs
+   * off, and answering it No is not a deficiency — it is the answer. Without
+   * this, routing questions are unusable: every electric job would score a
+   * failure, demand a photograph of the absent appliance, and refuse to be
+   * signed until somebody explained why there wasn't one.
+   *
+   * So it is asked and answered like any yes/no checkpoint, and it still has to
+   * be answered before sign-off — a forgotten router silently skips everything
+   * downstream of it — but it is not scored and never becomes a punch item.
+   */
+  informational?: boolean;
+}
+
+/**
+ * "Ask this only when that was answered so."
+ *
+ * One level deep, deliberately. The TRD specifies nested chains and
+ * score-triggered reveals; almost all of the value is in the first level — *if
+ * there is no gas appliance, do not ask twelve combustion questions* — and each
+ * further level multiplies the ways a checklist can be authored into a state
+ * where a question can never be reached and nobody notices.
+ *
+ * The controlling checkpoint is named by id rather than by position so that
+ * reordering a section cannot silently repoint a condition at a different
+ * question.
+ */
+export interface Condition {
+  /** The checkpoint whose answer decides this. */
+  questionId: string;
+  /**
+   * Shown when that checkpoint's answer is one of these.
+   *
+   * Unanswered is not one of them: a conditional block appears once the question
+   * it depends on has been answered, and until then it is neither asked nor
+   * counted. That is the behaviour that makes the checklist shorter rather than
+   * merely differently shaped.
+   */
+  answerIn: Answer[];
 }
 
 export interface Section {
@@ -54,6 +97,8 @@ export interface Section {
   repeatable?: boolean;
   /** What one of them is called. "Head", "Zone", "Room". Defaults to "Item". */
   instanceNoun?: string;
+  /** Run this whole section only when another checkpoint was answered a particular way. */
+  showIf?: Condition;
 }
 
 /**

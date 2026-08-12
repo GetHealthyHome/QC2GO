@@ -7,8 +7,9 @@ import {
   formatDateTime,
   expandSections,
   getResponse,
-  isScored,
+  isYesNo,
   overallProgress,
+  skippedBlocks,
   sectionProgress,
 } from '../lib/inspection';
 import type { Answer, Question, SignatureRecord } from '../lib/types';
@@ -46,6 +47,7 @@ export function ReportScreen() {
   }
 
   const progress = overallProgress(inspection, sections);
+  const skipped = skippedBlocks(inspection, sections);
   const completed = inspection.status === 'completed';
 
   function exportJson() {
@@ -199,7 +201,7 @@ export function ReportScreen() {
               <ul className="flex flex-col divide-y divide-ink-100">
                 {section.questions.map((question: Question) => {
                   const response = getResponse(inspection, question.id, rendered.instanceId);
-                  if (!isScored(question)) {
+                  if (!isYesNo(question)) {
                     return (
                       <li
                         key={question.id}
@@ -215,7 +217,7 @@ export function ReportScreen() {
                   return (
                     <li key={question.id} className="py-2.5 break-inside-avoid">
                       <div className="flex items-start gap-2.5">
-                        <AnswerMark answer={response.answer} />
+                        <AnswerMark answer={response.answer} muted={question.informational} />
                         <p className="flex-1 text-[14px] leading-snug text-ink-800">
                           {question.text}
                         </p>
@@ -259,6 +261,31 @@ export function ReportScreen() {
             </ReportSection>
           );
         })}
+
+        {/*
+          * What the checklist did not ask, and why.
+          *
+          * A conditional block that simply vanishes leaves a report nobody can
+          * audit: a year later, a question skipped because it did not apply and
+          * one quietly dropped from the checklist look identical — absent. So
+          * the report states them, read from the inspection's own frozen
+          * snapshot like everything else on a signed record.
+          */}
+        {skipped.length > 0 ? (
+          <ReportSection
+            title="Not applicable to this job"
+            meta={<Badge>{skipped.length}</Badge>}
+          >
+            <ul className="flex flex-col divide-y divide-ink-100">
+              {skipped.map((entry) => (
+                <li key={entry.key} className="py-2.5 break-inside-avoid first:pt-0">
+                  <p className="text-[14px] text-ink-700">{entry.label}</p>
+                  <p className="text-[12px] text-ink-500">{entry.reason}</p>
+                </li>
+              ))}
+            </ul>
+          </ReportSection>
+        ) : null}
 
         {inspection.reopenings?.length ? (
           <ReportSection
@@ -349,7 +376,26 @@ function ReportSection({
   );
 }
 
-function AnswerMark({ answer }: { answer: Answer | null }) {
+/**
+ * `muted` is for a checkpoint that records a fact rather than a standard. A red
+ * cross beside "Gas-fired appliance on site — No" reads as a failed inspection
+ * to anybody skimming the report, when what it says is that there is no gas
+ * appliance.
+ */
+function AnswerMark({ answer, muted }: { answer: Answer | null; muted?: boolean }) {
+  if (muted && answer) {
+    return (
+      <span className="mt-0.5 flex size-4.5 shrink-0 items-center justify-center rounded-full bg-ink-300 text-white">
+        {answer === 'yes' ? (
+          <CheckIcon className="size-3" strokeWidth={4} />
+        ) : answer === 'no' ? (
+          <XIcon className="size-3" strokeWidth={4} />
+        ) : (
+          <MinusIcon className="size-3" strokeWidth={4} />
+        )}
+      </span>
+    );
+  }
   if (answer === 'yes') {
     return (
       <span className="mt-0.5 flex size-4.5 shrink-0 items-center justify-center rounded-full bg-pass-500 text-white">

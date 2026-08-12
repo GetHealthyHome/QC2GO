@@ -21,7 +21,8 @@
     "check:export": "node scripts/check-export.mjs",
     "check:sections": "node scripts/check-sections.mjs",
     "check:share-access": "node scripts/check-share-access.mjs",
-    "check:barcode": "node scripts/check-barcode.mjs"
+    "check:barcode": "node scripts/check-barcode.mjs",
+    "check:conditions": "node scripts/check-conditions.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

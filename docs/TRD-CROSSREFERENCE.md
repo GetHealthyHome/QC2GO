@@ -31,7 +31,7 @@ reported. It is not yet the platform around that slice.
 
 | TRD Module | Coverage | One-line read |
 | --- | :---: | --- |
-| 1 — Template Builder & Field Types | **~50%** | Full section/checkpoint authoring with versioned snapshots; 3 question types against the TRD's 15+, and no conditional logic, repeatable sections, or formulas. |
+| 1 — Template Builder & Field Types | **~65%** | Full section/checkpoint authoring with versioned snapshots, repeatable sections, and one level of conditional logic. Still 3 question types against the TRD's 15+, and no formulas. |
 | 2 — Evidence Capture & Media | **~65%** | Photos captured, downscaled, stored offline and rendered into the report; marks drawn beside the image rather than burned into it; time, coordinates and inspector burned into the pixels; barcode capture into serial-number checkpoints on devices with a decoder. No video/audio, no Instacount, no AI, and no crop or rotate. |
 | 3 — KYPiT Verification | **~15%** | Nothing of the risk engine exists. GPS is captured on the customer record, not on the evidence. |
 | 4 — Scoring, Workflows & Automation | **~40%** | A real scoring model with critical-failure override and hard sign-off blockers. No tasks, no punch list, no approval chain, no triage queue. |
@@ -98,7 +98,7 @@ two-layer org/team hierarchy does not yet — there is one layer, of three roles
 | — Signature (geotagged, timestamped) | **Partial** | `SignatureRecord` carries name + `signedAt` (`src/lib/types.ts:144`). Not geotagged. |
 | — Instacount | **Gap** | — |
 | — Calculated fields (SUM/AVG/MIN/MAX) | **Gap** | Scores are computed (`scoreOf`, `src/lib/inspection.ts:257`) but there is no user-authored formula. |
-| Conditional logic (if/then, nested, score-triggered) | **Gap** | No branching of any kind. Every checkpoint on a checklist is always shown and always required. |
+| Conditional logic (if/then, nested, score-triggered) | **Partial** | One level: `showIf` on a section or a checkpoint, naming an earlier checkpoint and the answers that reveal it. Hidden blocks are not asked, not scored, not blockers, and not punch items — and the report lists them with the reason, so a skipped question and a deleted one do not look identical. Nested chains and score-triggered reveals are not built; the editor can only point a condition *backwards*, which is what makes a loop unauthorable. |
 | Repeatable sections (per room / per zone / per head) | **Built** | A section marked repeatable runs once per instance, added on site and named by the inspector (`0012_repeatable_sections.sql`, `expandSections` in `src/lib/inspection.ts`). Each instance is answered and scored separately, so a failure names the head it belongs to. The TRD's `instance_index` has a home. |
 | AI template builder (natural language) | **Gap** | — |
 | Public template library (1,000+) | **Adapt** | Six shipped checklists (`src/templates/index.ts`), all written for this company's actual scopes, plus in-app authoring. A generic public library is the wrong target; a *shared company library* synced across devices is already effectively there via the `templates` table. |
@@ -386,6 +386,56 @@ It also turned up a real bug in the existing JSON export: the download anchor wa
 never attached to the document, which works in some browsers and is silently
 ignored in others — no file, no error, nothing to report. Both exports now share
 one helper that appends, clicks and cleans up.
+
+**Conditional logic — asking only what applies.** Roadmap item 10. A section or
+a checkpoint can now carry `showIf`, naming an earlier checkpoint and the answers
+that reveal it. Twelve combustion questions no longer get answered N/A on an
+all-electric job.
+
+The whole feature went in at `expandSections` — the seam repeatable sections
+established — so progress, score, blockers, deficiencies, punch, export and the
+report became condition-aware without any of them learning what a condition is.
+The filter is deliberately idempotent and applied in both `expandSections` and
+`visibleQuestions`, so it cannot matter whether a caller hands over a raw section
+or one that has already been through it. A rule this important is worth being
+unable to skip.
+
+Three things were less obvious than the branching itself:
+
+**A hidden question must not count.** Not in the score, not as a punch item, and
+above all not as a sign-off blocker — a blocker naming a checkpoint that is
+nowhere on screen cannot be cleared by anybody, and no amount of scrolling
+explains it. That is the first thing the new suite asserts, and the guard is
+paired with its opposite: a *visible* question must still block, so the fix
+cannot have been bought by making blockers toothless.
+
+**Hiding is not deleting.** An inspector who answers a block, corrects the
+controlling answer, and corrects it back should not have lost the work in
+between. Answers left behind by a hidden block stay on the record and simply stop
+being read.
+
+**Routing questions needed their own idea.** This is the part the issue did not
+anticipate. "Gas-fired appliance on site" is the shape of question a condition
+hangs off, and in this app answering a yes/no checkpoint No means a deficiency —
+so every electric job would have scored a failure, demanded a photograph of the
+absent appliance, and refused to be signed until somebody explained why there
+wasn't one. Hence `informational`: asked and answered like any checkpoint, still
+required before sign-off (a forgotten router silently skips everything downstream
+of it), never scored, never a punch item, and shown with a muted mark on the
+report rather than a red cross. `isScored` and the new `isYesNo` had to be
+separated to express it — one is about how a question is answered, the other
+about whether it counts.
+
+**And the report has to explain itself.** A conditional block that simply
+vanishes leaves a record nobody can audit: a year later, a question skipped
+because it did not apply and one quietly dropped from the checklist look
+identical — absent. So the report carries a "Not applicable to this job" section
+naming each one and the answer that hid it, read from the inspection's own frozen
+snapshot like everything else on a signed record.
+
+Nested chains and score-triggered reveals are deliberately not built. The editor
+can only point a condition *backwards* — at checkpoints earlier in the checklist
+— which is what makes a loop unauthorable rather than merely discouraged.
 
 **Barcode capture into serial checkpoints.** Roadmap item 11. Reading a serial
 off a data plate with the camera instead of gloved thumbs.

@@ -4,6 +4,7 @@ import { useChecklist, useCustomer, useInspection, useStore } from '../lib/store
 import { refreshPosition } from '../lib/geo';
 import {
   VISIT_TYPE_LABELS,
+  conditionMet,
   expandSections,
   getResponse,
   instanceTitle,
@@ -12,6 +13,7 @@ import {
   overallProgress,
   responseKey,
   sectionProgress,
+  visibleQuestions,
 } from '../lib/inspection';
 import type { FieldDef, Inspection, Response, Section } from '../lib/types';
 import { QuestionCard } from '../components/QuestionCard';
@@ -67,13 +69,22 @@ export function InspectionScreen() {
       { id: INFO_STEP, title: 'Job Information' },
     ];
     for (const section of sections) {
+      const blocks = rendered.filter((entry) => entry.section.id === section.id);
+
       if (!section.repeatable) {
-        list.push({ id: section.id, title: section.title, section });
+        // Absent from the expanded view means the section does not apply to this
+        // job, so it gets no step at all — the whole point of the condition that
+        // hid it. The block's section is used rather than the raw one because
+        // its questions have already had the same rule applied.
+        if (blocks.length === 0) continue;
+        list.push({ id: section.id, title: section.title, section: blocks[0].section });
         continue;
       }
-      const blocks = rendered.filter((entry) => entry.section.id === section.id);
+
       if (blocks.length === 0) {
-        // Nothing added yet: one step that exists to say so and offer the button.
+        // Either nobody has added an instance yet, or the section does not apply
+        // at all. Only the first deserves a step saying so.
+        if (!inspection || !conditionMet(inspection, section.showIf)) continue;
         list.push({ id: section.id, title: section.title, section });
         continue;
       }
@@ -81,13 +92,13 @@ export function InspectionScreen() {
         list.push({
           id: block.key,
           title: block.title.split(' — ').slice(1).join(' — ') || block.title,
-          section,
+          section: block.section,
           instanceId: block.instanceId,
         });
       }
     }
     return list;
-  }, [sections, rendered]);
+  }, [inspection, sections, rendered]);
 
   const stepParam = searchParams.get('step');
   const focusQuestion = searchParams.get('focus');
@@ -460,7 +471,9 @@ function SectionStep({
         meta={`${stats.answered} of ${stats.total} answered`}
       />
       <div className="flex flex-col gap-2.5">
-        {section.questions.map((question, index) => (
+        {/* Filtered again here, so it cannot matter whether the step handed over
+            a section that had the rule applied or a raw one. */}
+        {visibleQuestions(inspection, section, instanceId).map((question, index) => (
           <QuestionCard
             key={question.id}
             index={index + 1}

@@ -36,7 +36,7 @@ reported. It is not yet the platform around that slice.
 | 3 — KYPiT Verification | **~15%** | Nothing of the risk engine exists. GPS is captured on the customer record, not on the evidence. |
 | 4 — Scoring, Workflows & Automation | **~40%** | A real scoring model with critical-failure override and hard sign-off blockers. No tasks, no punch list, no approval chain, no triage queue. |
 | 5 — Teams, Security & Access | **~60%** | Supabase auth, per-company tenancy with three roles, row-level security proven by an isolation suite, invitation-based onboarding, tombstoned deletes. No second (team) role layer, no external sharing, no SSO, no audit ledger. |
-| 6 — Reports, Exports & Integrations | **~25%** | Print-to-PDF report and JSON export; a Postgres summary view for the office. No branded layout engine, no .docx/.xlsx, no webhooks, no cloud sync. |
+| 6 — Reports, Exports & Integrations | **~40%** | Print-to-PDF report and JSON export; a Postgres summary view for the office. No branded layout engine, no .docx/.xlsx, no webhooks, no cloud sync. |
 
 The overall shape of the gap is consistent: **QC2GO has the record, and does not
 yet have the systems that consume the record.** Evidence integrity (Module 3),
@@ -354,6 +354,18 @@ The two-copy shape is the interesting part, and it comes from this app working
 offline: the reason lands on the inspection so it can be written with no signal
 and read anywhere, and the server keeps its own copy when the change syncs up.
 The first is convenient; the second is the evidence.
+
+**`0011_webhooks.sql` — the first thing out of the building.** Completed
+inspections now reach other systems. Two decisions worth recording: the payload
+is built at the moment of completion and stored, so a retry an hour later sends
+the body it was always going to send rather than re-reading a record that may
+have been reopened since; and deliveries are a queue with backoff rather than
+fire-and-forget, because an event lost to somebody's server restarting is worse
+than no integration at all.
+
+It also settles the §11 note about the payload mapping: the serializer was
+written to the TRD's shape rather than to a third shape of our own, which is what
+the export in #25 will reuse.
 
 **`0010_annotations.sql` — marks on a photo.** Four of the TRD's six annotation
 tools, stored as coordinates beside the photo rather than burned into it. Two

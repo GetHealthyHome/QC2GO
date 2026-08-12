@@ -6,6 +6,7 @@ import { NoOrganizationScreen } from './screens/NoOrganizationScreen';
 import { SetPasswordScreen } from './screens/SetPasswordScreen';
 import { PeopleScreen } from './screens/PeopleScreen';
 import { PunchListScreen } from './screens/PunchListScreen';
+import { IntegrationsScreen } from './screens/IntegrationsScreen';
 import { HomeScreen } from './screens/HomeScreen';
 import { CustomerFormScreen } from './screens/CustomerFormScreen';
 import { CustomerScreen } from './screens/CustomerScreen';
@@ -75,6 +76,7 @@ export default function App() {
         <Route path="/checklists/:templateId" element={<ChecklistEditorScreen />} />
         <Route path="/settings" element={<SettingsScreen />} />
         <Route path="/people" element={<PeopleScreen />} />
+        <Route path="/integrations" element={<IntegrationsScreen />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </div>

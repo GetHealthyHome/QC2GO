@@ -1,6 +1,6 @@
 # Supabase backend
 
-Ten migrations:
+Eleven migrations:
 
 - **`0001_init.sql`** — tables, roles, row-level security, the photo storage
   bucket, and an office summary view.
@@ -25,11 +25,12 @@ Ten migrations:
 - **`0009_photo_provenance.sql`** — when and where a photo was actually taken.
 - **`0010_annotations.sql`** — marks drawn over a photo, stored beside it rather
   than burned into it.
+- **`0011_webhooks.sql`** — telling somebody else an inspection finished.
 
-All ten are replayed end-to-end from an empty PostgreSQL 16 database on every
+All eleven are replayed end-to-end from an empty PostgreSQL 16 database on every
 pull request, along with a two-company isolation suite — see
 [Proving the boundary](#proving-the-boundary). `0001` through `0004` are applied
-to the live project; `0005` through `0010` apply on merge.
+to the live project; `0005` through `0011` apply on merge.
 
 ## Setting it up
 
@@ -121,6 +122,60 @@ as a conflict nobody can resolve.
 ## Edge Functions
 
 `supabase/functions/` holds the server-side code. There is one function today.
+
+### `deliver-webhooks`
+
+Drains `webhook_deliveries`: posts each queued body to its endpoint with an
+HMAC-SHA256 signature, records the result, and backs off on failure. Unlike
+`invite-user` it takes no input from a caller and makes no decision about who
+anything belongs to — it reads rows the database already wrote and posts them
+where those rows say, so there is nothing a request body could influence.
+
+```bash
+supabase functions deploy deliver-webhooks
+```
+
+**It needs a schedule.** Every minute is right; nothing else invokes it. With
+`pg_cron` and `pg_net` enabled:
+
+```sql
+select cron.schedule(
+  'deliver-webhooks', '* * * * *',
+  $$ select net.http_post(
+       url     := 'https://<ref>.functions.supabase.co/deliver-webhooks',
+       headers := jsonb_build_object('Authorization', 'Bearer <service-role-key>')
+     ); $$
+);
+```
+
+Any external scheduler hitting the same URL works just as well. Invoking it by
+hand is safe at any time — a delivered row is never selected again.
+
+### How a webhook is delivered
+
+**The payload is built at the moment of completion and stored.** Not assembled
+later from whatever the record says by then. An inspection can be reopened and
+amended; the webhook has to describe what was true when it fired, and a delivery
+retrying an hour later must send the body it was always going to send. The
+migration suite asserts exactly this by changing the score afterwards and
+checking the queued body did not move.
+
+**Deliveries are a queue, not fire-and-forget.** The receiving end will be down
+sometimes, and an event lost because somebody's server was restarting is worse
+than no integration at all. Six attempts over about two and a half hours, with
+the first retry quick and the last long.
+
+**A 4xx is not retried.** It means the receiver understood and refused — a wrong
+URL, a revoked token. Retrying that for two hours is noise on somebody else's
+server. 408 and 429 are the exceptions: both explicitly mean "not now", which is
+a different answer from "no".
+
+**The body is signed.** `X-QC2GO-Signature: sha256=<hmac>` over the exact bytes
+sent, using the endpoint's secret. A receiver that does not verify it is trusting
+anybody who knows the URL.
+
+The payload is the TRD's §5.2 shape rather than this app's own field names. The
+moment it is easier to send the internal shape, the contract starts drifting.
 
 ### `invite-user`
 
@@ -409,6 +464,10 @@ a type error — the field simply arrives back empty — and this is what catche
 **Storage cleanup for abandoned uploads.** A photo whose row upload fails after
 the file has already gone to the bucket leaves the file behind. Rare, and it
 costs storage rather than correctness, but there is no sweeper for it yet.
+
+**Webhook events beyond `inspection.completed`.** The `events` column on an
+endpoint is an array and the trigger filters on it, so `inspection.created` and
+`task.flagged` are a trigger each rather than a schema change.
 
 **Presence of other inspectors.** Nothing indicates that someone else is working
 the same job right now; the first you know is when their inspection appears.

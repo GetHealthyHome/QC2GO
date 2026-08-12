@@ -53,6 +53,16 @@ check(
   JSON.stringify(people.slice(0, 90)),
 );
 
+// Endpoints carry signing secrets, which are credentials.
+await p.goto(BASE + '/#/integrations', { waitUntil: 'networkidle' });
+await p.waitForTimeout(1000);
+const integrations = await p.locator('body').innerText();
+check(
+  'deep link to /integrations is gated',
+  integrations.includes('Sign in') && !integrations.includes('Signing secret'),
+  JSON.stringify(integrations.slice(0, 90)),
+);
+
 await p.getByLabel('Email').fill('nobody@example.com');
 await p.getByLabel('Password').fill('wrong-password');
 await p.getByRole('button', { name: 'Sign in' }).click();

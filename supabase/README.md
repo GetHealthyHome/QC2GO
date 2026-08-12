@@ -1,6 +1,6 @@
 # Supabase backend
 
-Eleven migrations:
+Fifteen migrations:
 
 - **`0001_init.sql`** — tables, roles, row-level security, the photo storage
   bucket, and an office summary view.
@@ -26,11 +26,19 @@ Eleven migrations:
 - **`0010_annotations.sql`** — marks drawn over a photo, stored beside it rather
   than burned into it.
 - **`0011_webhooks.sql`** — telling somebody else an inspection finished.
+- **`0012_repeatable_sections.sql`** — a section run once per head, zone or room.
+- **`0013_report_shares.sql`** — a read-only link to a signed report, token
+  stored hashed so the table is useless to whoever reads it.
+- **`0014_tasks.sql`** — work orders: who is doing something about a deficiency,
+  and the company's own answer to whether a second person has to verify it.
+- **`0015_scheduling.sql`** — the timer for the two functions nobody calls by
+  hand. Every statement in it is guarded, because it also has to be a no-op on
+  the plain PostgreSQL the isolation suite runs against.
 
-All eleven are replayed end-to-end from an empty PostgreSQL 16 database on every
+All fifteen are replayed end-to-end from an empty PostgreSQL 16 database on every
 pull request, along with a two-company isolation suite — see
-[Proving the boundary](#proving-the-boundary). `0001` through `0004` are applied
-to the live project; `0005` through `0011` apply on merge.
+[Proving the boundary](#proving-the-boundary). All fifteen are applied to the
+live project; new ones apply on merge.
 
 ## Setting it up
 
@@ -121,7 +129,20 @@ as a conflict nobody can resolve.
 
 ## Edge Functions
 
-`supabase/functions/` holds the server-side code. There is one function today.
+`supabase/functions/` holds the server-side code. There are four, and all four
+are deployed to the live project.
+
+| Function | JWT | Called by |
+| --- | --- | --- |
+| `invite-user` | required | an owner, from Settings → People |
+| `shared-report` | **none** | anybody holding a share link, with no account |
+| `deliver-webhooks` | required | `cron`, every minute |
+| `sweep-photos` | required | `cron`, daily at 04:00 UTC |
+
+`shared-report` is the only one deployed with `--no-verify-jwt`, and that is the
+point of it: the recipient is a homeowner with a link, not a user. Everything it
+will not disclose is decided explicitly in `access.ts` rather than by a policy,
+because with the service key there is no policy underneath it.
 
 ### `deliver-webhooks`
 
@@ -243,6 +264,40 @@ Run it once with `{"dryRun": true}` before scheduling it on a deployment that ha
 been running a while — it reports what it would collect and deletes nothing.
 Then schedule it daily from the SQL editor; the cron snippet is in the header of
 `sweep-photos/index.ts`.
+
+### Scheduling
+
+`deliver-webhooks` and `sweep-photos` are code nobody calls by hand, so until
+something runs them they look exactly like features that do not work.
+`0015_scheduling.sql` enables `pg_cron` and `pg_net` and creates both jobs — the
+queue drain every minute, the sweep daily at 04:00 UTC.
+
+**The credentials are deliberately not in the migration.** A cron job has to
+authenticate to call a function, and the service-role key bypasses row-level
+security entirely, so it is read from Vault at call time along with the
+project's functions URL. Both jobs are written so that a missing secret means
+they do nothing rather than failing every minute against a null header — set the
+two secrets and they start working on their own:
+
+```sql
+select vault.create_secret('<service-role key>', 'qc2go_service_role_key');
+select vault.create_secret('https://<ref>.supabase.co/functions/v1',
+                           'qc2go_functions_url');
+```
+
+Until then `cron.job_run_details` shows both jobs succeeding with `0 rows`,
+which is the no-op and not a failure. Check on them there:
+
+```sql
+select j.jobname, d.status, d.return_message, d.start_time
+from cron.job_run_details d join cron.job j using (jobid)
+order by d.start_time desc limit 10;
+```
+
+One trap worth knowing, because it cost a round here: **Supabase pins `pg_net`
+to the `net` schema** and silently ignores a `with schema` clause. A job body
+that calls `extensions.http_post` is scheduled quite happily and then fails
+every minute against a function that does not exist.
 
 ### One thing to check in the dashboard
 

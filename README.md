@@ -239,6 +239,24 @@ happens in a Supabase Edge Function (`supabase/functions/invite-user`) rather
 than in the browser — see [`supabase/README.md`](supabase/README.md), which also
 covers creating a company and its first owner.
 
+## Exports
+
+The Completed screen offers two CSVs, both built from what the device already
+holds so they work with no signal:
+
+- **Inspections** — one row per completed inspection: customer, checklist,
+  inspector, score, verdict, and how many deficiencies are still open.
+- **Checkpoints** — one row per answered checkpoint across every inspection.
+  This is the one that answers "which questions do we fail most often?", which
+  is a question nobody can ask of the app itself.
+
+Each checkpoint row is read through its inspection's frozen snapshot, so a
+question reworded last month still appears with the wording that was actually
+asked at the time.
+
+`inspection_summary` in the database is the other half of this, for anything
+pointing a BI tool at Postgres.
+
 ## Integrations
 
 A company can point QC2GO at its own systems: every signed inspection is posted

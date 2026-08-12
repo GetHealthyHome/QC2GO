@@ -17,7 +17,8 @@
     "check:invite-authorization": "node scripts/check-invite-authorization.mjs",
     "check:exif": "node scripts/check-exif.mjs",
     "check:annotations": "node scripts/check-annotations.mjs",
-    "check:webhooks": "node scripts/check-webhook-schedule.mjs"
+    "check:webhooks": "node scripts/check-webhook-schedule.mjs",
+    "check:export": "node scripts/check-export.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

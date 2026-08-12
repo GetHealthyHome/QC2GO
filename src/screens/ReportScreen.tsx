@@ -16,6 +16,7 @@ import { AnnotatedPhoto } from '../components/AnnotatedPhoto';
 import { Badge, Button, Card, Screen, TopBar, cx } from '../components/ui';
 import { Letterhead } from '../components/Letterhead';
 import { letterheadName } from '../lib/branding';
+import { downloadFile } from '../lib/exportCsv';
 import { useAuth } from '../lib/auth';
 import { AlertIcon, CheckIcon, MinusIcon, PenIcon, PrinterIcon, ShareIcon, XIcon } from '../components/Icons';
 
@@ -52,13 +53,10 @@ export function ReportScreen() {
       customer,
       inspection: { ...inspection, template: checklist!.templateName },
     };
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${(customer?.customerName ?? 'inspection').replace(/[^\w-]+/g, '-')}-${inspection.id}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
+    downloadFile(
+      `${(customer?.customerName ?? 'inspection').replace(/[^\w-]+/g, '-')}-${inspection.id}.json`,
+      new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }),
+    );
   }
 
   /**

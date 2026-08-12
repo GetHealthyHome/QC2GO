@@ -60,6 +60,12 @@ jobs:
       - name: Check the webhook retry schedule
         run: npm run check:webhooks
 
+      # A file the office opens once a month is exactly the kind of thing that
+      # breaks silently — a comma in an address, a quote in a name, or a value
+      # Excel decides is a formula and runs.
+      - name: Check the spreadsheet export
+        run: npm run check:export
+
       - name: Build
         run: npm run build
 

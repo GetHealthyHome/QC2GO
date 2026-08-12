@@ -186,7 +186,7 @@ against adversarial external submitters.
 | Branded PDF — logos, header/footer themes, pass/fail badges, annotated galleries | **Partial** | `ReportScreen` renders the full record — job info, summary notes, every section with pass/fail marks, deficiency explanations with photo grids, measured values, both signatures — with print styles tuned so **Print → Save as PDF** produces the customer document. Pass/fail badges are there, and as of `0005_branding.sql` so is a per-company logo in a fixed letterhead slot (`src/lib/branding.ts`), reserved so adding one never reflows the page. Missing: theming, layout presets, server-side rendering. |
 | Layout presets (Quality Audit / Executive / Client Facing / Word) | **Gap** | One layout. |
 | Custom Word `.docx` with `{{field}}` tags | **Gap** | — |
-| Excel exports (raw / pivot / summary) | **Partial** | JSON export only (`ReportScreen.exportJson`). `docs/checklists.csv` is a CSV of *checklist definitions*, not results. The Postgres view `inspection_summary` (`supabase/migrations/0002_customers.sql:97`) already flattens pass/fail counts per inspection and is one step from a real office spreadsheet. |
+| Excel exports (raw / pivot / summary) | **Built** | JSON export only (`ReportScreen.exportJson`). `docs/checklists.csv` is a CSV of *checklist definitions*, not results. The Postgres view `inspection_summary` (`supabase/migrations/0002_customers.sql:97`) already flattens pass/fail counts per inspection and is one step from a real office spreadsheet. |
 | REST API & webhooks (`inspection.created/completed`, `task.flagged`) | **Gap** | Supabase exposes PostgREST over the tables, but none of the TRD's `/v1` contract exists and nothing fires on completion. |
 | Cloud storage auto-sync (Drive / Dropbox / OneDrive / SharePoint, `/Client/Project/Year/`) | **Gap** | — |
 | BI connectors (Power BI, Looker Studio, Metabase) | **Partial** | Any of them can point at Postgres today; `inspection_summary` is a usable starting view. No curated dataset or dashboard. |
@@ -354,6 +354,22 @@ The two-copy shape is the interesting part, and it comes from this app working
 offline: the reason lands on the inspection so it can be written with no signal
 and read anywhere, and the server keeps its own copy when the change syncs up.
 The first is convenient; the second is the evidence.
+
+**The office export.** Two CSVs from the Completed screen: one row per
+inspection, and one row per checkpoint for pivoting on which questions fail most
+often. Built from local data, so it works with no signal.
+
+The interesting part was the encoding rather than the rows. Excel executes a
+field that begins with `=`, `+`, `-` or `@`, and a measurement of `-2` is
+ordinary in this app — so every such value is neutralised on the way into the
+file. Without a byte-order mark Excel also reads UTF-8 as Latin-1 and turns every
+`°` into mojibake. Both are asserted, along with a comma in an address and a
+quote in a name.
+
+It also turned up a real bug in the existing JSON export: the download anchor was
+never attached to the document, which works in some browsers and is silently
+ignored in others — no file, no error, nothing to report. Both exports now share
+one helper that appends, clicks and cleans up.
 
 **`0011_webhooks.sql` — the first thing out of the building.** Completed
 inspections now reach other systems. Two decisions worth recording: the payload

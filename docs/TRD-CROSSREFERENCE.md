@@ -192,11 +192,12 @@ turns out to be wrong has not stamped a permanent accusation onto a QC document.
 
 | TRD requirement | Status | As built |
 | --- | :---: | --- |
-| Branded PDF — logos, header/footer themes, pass/fail badges, annotated galleries | **Partial** | `ReportScreen` renders the full record — job info, summary notes, every section with pass/fail marks, deficiency explanations with photo grids, measured values, both signatures — with print styles tuned so **Print → Save as PDF** produces the customer document. Pass/fail badges are there, and as of `0005_branding.sql` so is a per-company logo in a fixed letterhead slot (`src/lib/branding.ts`), reserved so adding one never reflows the page. Missing: theming, layout presets, server-side rendering. |
+| Branded PDF — logos, header/footer themes, pass/fail badges, annotated galleries | **Built** | `src/lib/pdf/` produces the customer document directly: US Letter, company letterhead and logo, the pass/fail summary, job information, every section with its marks and deficiency notes, annotated photo galleries flattened with the same `strokePath`/`arrowHead` geometry the screen uses, serials in a monospaced block, both signatures, and a footer identifying the job on every sheet. Pagination is decided by a pure module (`layout.ts`) rather than by whichever browser the inspector happened to use. Built on the device rather than on a server — see §13. Missing: theming and layout presets. |
+
 | Layout presets (Quality Audit / Executive / Client Facing / Word) | **Gap** | One layout. |
 | Custom Word `.docx` with `{{field}}` tags | **Gap** | — |
-| Excel exports (raw / pivot / summary) | **Built** | JSON export only (`ReportScreen.exportJson`). `docs/checklists.csv` is a CSV of *checklist definitions*, not results. The Postgres view `inspection_summary` (`supabase/migrations/0002_customers.sql:97`) already flattens pass/fail counts per inspection and is one step from a real office spreadsheet. |
-| REST API & webhooks (`inspection.created/completed`, `task.flagged`) | **Gap** | Supabase exposes PostgREST over the tables, but none of the TRD's `/v1` contract exists and nothing fires on completion. |
+| Excel exports (raw / pivot / summary) | **Built** | Two CSVs from the Completed screen (`src/lib/exportCsv.ts`): one row per completed inspection, and one row per answered checkpoint for pivoting. Both are built from what the device already holds, so they work with no signal. `inspection_summary` (`supabase/migrations/0002_customers.sql:97`) remains the other half for anything pointing a BI tool at Postgres. JSON export of a single report is still on `ReportScreen`. |
+| REST API & webhooks (`inspection.created/completed`, `task.flagged`) | **Partial** | `inspection.completed` fires in the TRD's documented payload shape, with the body frozen at the moment of completion and a backoff schedule behind it (`src/lib/webhooks.ts`, `supabase/functions/deliver-webhooks`). `inspection.created` and `task.flagged` do not exist, and neither does the `/v1` REST contract — Supabase still exposes PostgREST over the tables. |
 | Cloud storage auto-sync (Drive / Dropbox / OneDrive / SharePoint, `/Client/Project/Year/`) | **Gap** | — |
 | BI connectors (Power BI, Looker Studio, Metabase) | **Partial** | Any of them can point at Postgres today; `inspection_summary` is a usable starting view. No curated dataset or dashboard. |
 
@@ -209,7 +210,7 @@ turns out to be wrong has not stamped a permanent accusation onto a QC document.
 | 1 — Template Builder Web Canvas | **Partial** | `ChecklistEditorScreen` covers the centre canvas. No left field palette (there are only three question kinds to drag) and no right inspector panel (properties are inline). Both arrive naturally with more field types. |
 | 2 — Mobile Field Inspection | **Built** | The closest match in the app. Offline badge (`OfflineBanner`), progress metrics, one-tap Yes/No/N-A tiles, inline Add Photo, sticky bottom bar. Missing from the TRD's bar: flag navigation and voice dictation. |
 | 3 — Mobile Evidence & Camera Annotator | **Partial** | Built since this table was first written: `0010` added arrow, box, circle, freehand and text marks in normalised coordinates, and `0009` burns the time, coordinates and inspector into the pixels. Still missing: a capture-mode toggle, and the TRD's blur and measurement tools. |
-| 4 — Report Generation & Layout Engine | **Partial** | Report preview, download and a read-only share link exist; no preset switcher and no email — QC2GO produces the link, the sender delivers it. |
+| 4 — Report Generation & Layout Engine | **Partial** | Report preview, a paginated branded PDF, spreadsheet export and a read-only share link all exist; no preset switcher and no email — QC2GO produces the file and the link, the sender delivers them. |
 | 5 — Mobile AI Walkthrough & Session Summary | **Gap** | — |
 | 6 — Tasks, Punch Lists & Work Order Center | **Gap** | `CompletedScreen` is the nearest thing — a searchable history of finished inspections — but it is a record, not a queue. |
 
@@ -691,3 +692,56 @@ production failure rather than an error:
 3. **Photo deletes chased files that never existed.** Queueing a delete computed
    a bucket path when the record had none — but a record with no `storagePath`
    was never uploaded. Now it queues the path only when there is one.
+
+**`src/lib/pdf/` — the customer deliverable stops being the print dialog.**
+Item 7 of the roadmap above, and the last unbuilt entry in tiers 1 and 2. Until
+now the only way a finished report left the app as a document was **Print → Save
+as PDF**, which is the one part of the deliverable nobody controls: pagination
+differs between Chrome, Safari and a phone, a checkpoint can be sliced in half by
+a page break, and what a customer receives depends on which button they pressed.
+
+**Built on the device, not on a server, which is a deliberate departure from what
+the roadmap said.** The reasoning that put it there was that a server gives
+consistent pagination and a real file rather than the browser's print dialog —
+and both of those are properties of the layout code, not of where it runs. Set
+against that, a server-rendered PDF is one an inspector cannot produce in a
+crawlspace, in an app whose entire premise is that they can finish a job with no
+signal; and it would have been inert until the Edge Functions are deployed. So it
+runs locally, behind a dynamic import — pdf-lib costs ~180 KB gzipped and is
+fetched only by somebody who asks for a file, then precached with the rest of the
+build so the second tap works offline. Server-side rendering remains the right
+answer for a report generated *for* somebody who is not holding the device, which
+is where a share-link download or a scheduled email would want it.
+
+Three things shaped the implementation.
+
+**Deciding where the page breaks is separate from drawing it.** `layout.ts`
+takes measured heights and returns pages; it imports nothing. That is what makes
+the dangerous part testable, and the dangerous part is not ugliness — it is a
+checkpoint that quietly does not appear in the file somebody was handed. The
+invariant asserted in `check:pdf-layout` is conservation: every block handed in
+comes back exactly once, and a block too tall for any page overflows visibly
+rather than being dropped or looped over forever. Widow control and
+keep-with-next for section headings ride along on the same pass, and both were
+confirmed to fire by breaking them deliberately and watching the right checks
+fail.
+
+**A serial number is the string most likely to be wider than its column.** It
+arrives as one unbroken token by design, and a word-wrapper with no answer for
+that emits a line that runs off the edge of the page — losing precisely the half
+somebody needs for a warranty registration. `wrapText` hard-splits it instead.
+
+**The built-in PDF fonts throw rather than drawing a missing glyph.** One emoji
+pasted into a note, one Cyrillic surname, one invisible control byte from a
+barcode scanner, and the button would appear to be broken rather than the report
+appearing to be imperfect. `encodable` substitutes those characters for display
+only; the record itself is untouched.
+
+The marks on a photo are drawn with the same `strokePath` and `arrowHead` the
+screen uses, flattened into the raster at 700 px — an arrow that points at one
+thing on a phone and something else on paper is the failure that would discredit
+an annotated photo in front of a customer. Photos are contained rather than
+cropped for the same reason: the defect is not reliably in the middle of the
+frame. The smoke test downloads the file, inflates its streams and asserts the
+words on the page, because nothing in the layout checks proves pdf-lib draws
+anything at all; the PDF is kept beside the screenshots as a CI artifact.

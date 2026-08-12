@@ -108,6 +108,13 @@ jobs:
       - name: Check what the photo sweeper may delete
         run: npm run check:sweep
 
+      # The customer deliverable stopped being the browser's print dialog. What
+      # can go wrong is quiet: a checkpoint dropped at a page break appears in
+      # no error and in no screenshot, and nobody proofreads a PDF against the
+      # app after it has been emailed.
+      - name: Check where a report breaks across pages
+        run: npm run check:pdf-layout
+
       - name: Build
         run: npm run build
 

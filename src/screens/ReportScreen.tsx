@@ -80,6 +80,12 @@ export function ReportScreen() {
     updateInspection(inspection.id, {
       status: 'in-progress',
       completedAt: undefined,
+      // The stored result goes with the sign-off that produced it. Leaving it
+      // behind would let a webhook or a spreadsheet report a verdict on a
+      // record that no longer has one, and it is rewritten on re-completion.
+      overallScore: undefined,
+      passFailStatus: undefined,
+      totalDeficiencies: undefined,
       reopenings: [
         ...(inspection.reopenings ?? []),
         { reason: reason.trim(), at: new Date().toISOString(), by: profile?.email },

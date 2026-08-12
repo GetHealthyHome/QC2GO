@@ -187,6 +187,18 @@ export interface Inspection {
   customerSignature?: SignatureRecord;
   /** Every time this record was unlocked after signing, and why. Append-only. */
   reopenings?: ReopenRecord[];
+  /**
+   * The result, written at sign-off for everything outside the app to read —
+   * a webhook body, a spreadsheet, a dashboard. Absent while in progress,
+   * which is the honest state: there is no result yet.
+   *
+   * Inside the app the score is still derived from the responses on every
+   * read. Two copies of a number is a risk; the alternative was two
+   * implementations of the rule, which is a worse one.
+   */
+  overallScore?: number;
+  passFailStatus?: 'PASS' | 'FAIL' | 'NEEDS_REVIEW';
+  totalDeficiencies?: number;
   /** Account that ran the inspection. The server only lets its author edit it. */
   createdBy?: string;
   createdAt: string;

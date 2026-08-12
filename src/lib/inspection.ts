@@ -289,6 +289,46 @@ export function scoreBand(score: Score): ScoreBand {
   return 'fail';
 }
 
+/**
+ * The result as anything outside the app reads it — a webhook body, a
+ * spreadsheet, a BI extract. Deliberately the TRD's vocabulary rather than the
+ * app's own: `watch` is a shade this app understands and an external consumer
+ * does not, and "needs review" is what it actually means.
+ */
+export type PassFailStatus = 'PASS' | 'FAIL' | 'NEEDS_REVIEW';
+
+const BAND_TO_STATUS: Record<ScoreBand, PassFailStatus> = {
+  pass: 'PASS',
+  watch: 'NEEDS_REVIEW',
+  fail: 'FAIL',
+};
+
+export interface StoredSummary {
+  overallScore: number;
+  passFailStatus: PassFailStatus;
+  totalDeficiencies: number;
+}
+
+/**
+ * The result, written down at sign-off.
+ *
+ * Everywhere inside the app the score is derived from the responses on every
+ * read, which is right — the snapshot is frozen beside them, so the number
+ * cannot drift from what the inspection said. This exists for everything
+ * outside it, which cannot run this code to find out.
+ *
+ * Computed by the same functions the UI uses, so there is one rule rather than
+ * two implementations free to disagree.
+ */
+export function storedSummary(inspection: Inspection, sections: Section[]): StoredSummary {
+  const score = scoreOf(inspection, sections);
+  return {
+    overallScore: score.percent,
+    passFailStatus: BAND_TO_STATUS[scoreBand(score)],
+    totalDeficiencies: deficiencies(inspection, sections).length,
+  };
+}
+
 /** Groups inspections by the day they cover, most recent first. */
 export function groupByVisitDate<T extends { visitDate: string }>(items: T[]): Array<[string, T[]]> {
   const byDate = new Map<string, T[]>();

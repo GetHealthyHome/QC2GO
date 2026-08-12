@@ -121,6 +121,9 @@ export function inspectionToRow(inspection: Inspection, userId: string, orgId: s
     inspector_sig: inspection.inspectorSignature ?? null,
     customer_sig: inspection.customerSignature ?? null,
     reopenings: inspection.reopenings ?? [],
+    overall_score: inspection.overallScore ?? null,
+    pass_fail_status: inspection.passFailStatus ?? null,
+    total_deficiencies: inspection.totalDeficiencies ?? null,
     created_by: inspection.createdBy ?? userId,
     created_at: inspection.createdAt,
     updated_at: inspection.updatedAt,
@@ -149,6 +152,10 @@ export function rowToInspection(row: Row): Inspection {
     // Absent rather than empty when there are none, so an inspection that was
     // never reopened round-trips to exactly what it started as.
     reopenings: reopenList(row.reopenings),
+    overallScore: typeof row.overall_score === 'number' ? row.overall_score : undefined,
+    passFailStatus: (optionalText(row.pass_fail_status) as Inspection['passFailStatus']) ?? undefined,
+    totalDeficiencies:
+      typeof row.total_deficiencies === 'number' ? row.total_deficiencies : undefined,
     createdBy: optionalText(row.created_by),
     createdAt: iso(row.created_at, now),
     updatedAt: iso(row.updated_at, now),

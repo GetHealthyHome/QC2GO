@@ -368,6 +368,33 @@ check('a profile can read its own organization alongside itself', () => {
   return row === 'owner@acme.test @ Acme QC' ? null : `got: ${row || '(nothing)'}`;
 });
 
+check('the stored score is bounded and its verdict is a known word', () => {
+  const badScore = psql(
+    `update public.inspections set overall_score = 140 where id = 'insp-acme';`,
+    { expectError: true },
+  );
+  if (!badScore?.error) return 'a score of 140 was accepted';
+
+  const badStatus = psql(
+    `update public.inspections set pass_fail_status = 'probably fine' where id = 'insp-acme';`,
+    { expectError: true },
+  );
+  return badStatus?.error ? null : 'an unknown verdict was accepted';
+});
+
+check('the office summary reads the stored result rather than recounting', () => {
+  // The view used to derive pass/fail itself, which made it a second
+  // implementation of the scoring rule with nothing keeping the two in step.
+  const columns = psql(`
+    select string_agg(column_name, ',' order by column_name)
+      from information_schema.columns
+     where table_schema = 'public' and table_name = 'inspection_summary'
+       and column_name in ('overall_score', 'pass_fail_status', 'total_deficiencies');`);
+  return columns === 'overall_score,pass_fail_status,total_deficiencies'
+    ? null
+    : `the view exposes: ${columns || '(none of them)'}`;
+});
+
 check('reopening a signed inspection writes a ledger row', () => {
   psql(`
     insert into public.inspections (id, org_id, customer_id, snapshot, visit_type, status, created_by, completed_at)

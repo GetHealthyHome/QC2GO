@@ -250,16 +250,17 @@ closer to it than the module tables suggest. Mapping what exists:
 | `fields[].flagged` | **missing** as a response-level flag (`critical` is a question property) |
 | `media_attachments[].media_id` / `url` | `PhotoRecord.id` / `storagePath` |
 | `media_attachments[].watermarked` / `gps` / `annotations` | **missing** |
-| `summary.overall_score` / `pass_fail_status` | computed by `scoreOf` / `scoreBand`, not stored on the record |
-| `summary.total_deficiencies` | computed by `deficiencies()`, not stored |
+| `summary.overall_score` / `pass_fail_status` | `inspections.overall_score` / `pass_fail_status`, written at sign-off (`0007`) |
+| `summary.total_deficiencies` | `inspections.total_deficiencies`, written at sign-off (`0007`) |
 
 Two structural notes worth acting on regardless of the rest:
 
-1. **Scores are computed, never stored.** Every read recomputes from responses.
-   That is correct while the checklist snapshot is frozen alongside them, but the
-   TRD's payload, any webhook, and any BI extract all want the score as a stored
-   field. Persist `overall_score`, `pass_fail_status` and `total_deficiencies` on
-   completion.
+1. ~~**Scores are computed, never stored.**~~ **Done in `0007`.** They still are
+   computed on every read *inside* the app, which is right — the frozen snapshot
+   sits beside the responses, so the number cannot drift from what the inspection
+   said. But sign-off now writes `overall_score`, `pass_fail_status` and
+   `total_deficiencies` down for everything that cannot run that code, using the
+   same function that draws it on screen.
 2. **Responses are a map, the TRD's are an array.** `Record<questionId, Response>`
    collapses cleanly into the TRD's `sections[].fields[]` shape at export time
    using the snapshot — no migration needed, just a serializer. Whoever writes

@@ -3,8 +3,15 @@ import { Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { resolveChecklist } from '../lib/checklist';
 import { VISIT_TYPE_LABELS, formatDate, overallProgress } from '../lib/inspection';
-import { Badge, Card, EmptyState, Screen, TopBar, cx, inputClass } from '../components/ui';
-import { AlertIcon, ChevronRightIcon, ClipboardIcon, SearchIcon } from '../components/Icons';
+import {
+  checkpointRows,
+  downloadCsv,
+  exportFilename,
+  inspectionRows,
+  toCsv,
+} from '../lib/exportCsv';
+import { Badge, Button, Card, EmptyState, Screen, TopBar, cx, inputClass } from '../components/ui';
+import { AlertIcon, ChevronRightIcon, ClipboardIcon, SearchIcon, ShareIcon } from '../components/Icons';
 
 /** History across every job — what an inspector needs to recall a past walkthrough. */
 export function CompletedScreen() {
@@ -40,6 +47,16 @@ export function CompletedScreen() {
     );
   }, [rows, query]);
 
+  /**
+   * Built from what this device already holds, so it works with no signal —
+   * the same reason everything else here does. The `inspection_summary` view is
+   * the other half, for anything pointing a BI tool at the database.
+   */
+  function download(kind: 'inspections' | 'checkpoints') {
+    const build = kind === 'inspections' ? inspectionRows : checkpointRows;
+    downloadCsv(exportFilename(kind), toCsv(build(inspections, customers, templates, shared)));
+  }
+
   return (
     <>
       <TopBar title="Completed inspections" subtitle={`${rows.length} on this device`} back="/" />
@@ -55,6 +72,26 @@ export function CompletedScreen() {
               className={cx(inputClass, 'pl-11')}
             />
           </div>
+        ) : null}
+
+        {rows.length > 0 ? (
+          <Card className="mb-3 p-3.5">
+            <p className="text-[13px] font-semibold text-ink-900">Export for the office</p>
+            <p className="mt-0.5 text-xs leading-relaxed text-ink-500">
+              One row per inspection to see how the month went, or one row per checkpoint to
+              pivot on which questions fail most often.
+            </p>
+            <div className="mt-2.5 flex gap-2">
+              <Button variant="secondary" className="flex-1" onClick={() => download('inspections')}>
+                <ShareIcon className="size-4" />
+                Inspections
+              </Button>
+              <Button variant="secondary" className="flex-1" onClick={() => download('checkpoints')}>
+                <ShareIcon className="size-4" />
+                Checkpoints
+              </Button>
+            </div>
+          </Card>
         ) : null}
 
         {visible.length === 0 ? (

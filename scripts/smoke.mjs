@@ -17,6 +17,8 @@ const ctx = await browser.newContext({
   deviceScaleFactor: 2,
   isMobile: true,
   hasTouch: true,
+  // The office export is a real download; without this Playwright cancels it.
+  acceptDownloads: true,
 });
 const page = await ctx.newPage();
 const errors = [];
@@ -470,6 +472,50 @@ check(
   stillSigned?.status === 'completed' && stillFailing === 1,
   JSON.stringify({ status: stillSigned?.status, failing: stillFailing }),
 );
+
+// --- the office export ---
+//
+// A file the office opens once a month is exactly the kind of thing that breaks
+// silently, so this downloads it for real and reads the bytes back.
+console.log('--- csv export ---');
+await page.goto(BASE + '/#/completed', { waitUntil: 'networkidle' });
+await page.waitForTimeout(600);
+
+const [download] = await Promise.all([
+  page.waitForEvent('download'),
+  page.getByRole('button', { name: 'Checkpoints' }).click(),
+]);
+const csvPath = await download.path();
+const csv = fs.readFileSync(csvPath, 'utf8');
+
+check('the export downloads with a dated filename', /qc2go-checkpoints-\d{4}-\d{2}-\d{2}\.csv/.test(download.suggestedFilename()), download.suggestedFilename());
+check('it starts with a byte-order mark so Excel reads it as UTF-8', csv.charCodeAt(0) === 0xfeff);
+check('the failed checkpoint is in it with its explanation', csv.includes('Concord building department'));
+// The address lives in the other export, so download that one too.
+const [summaryDownload] = await Promise.all([
+  page.waitForEvent('download'),
+  page.getByRole('button', { name: 'Inspections' }).click(),
+]);
+const summary = fs.readFileSync(await summaryDownload.path(), 'utf8');
+
+check(
+  'the address with commas in it stayed in one cell',
+  summary.includes('"118 Marsh Rd, Concord, MA"'),
+  JSON.stringify(summary.split('\r\n')[1]?.slice(0, 160)),
+);
+check(
+  'the inspection export carries the stored score and verdict',
+  /,(?:100|\d{1,2}),(?:PASS|FAIL|NEEDS_REVIEW),/.test(summary),
+  JSON.stringify(summary.split('\r\n')[1]?.slice(0, 200)),
+);
+// Every row must have the same number of fields as the header, or the file is
+// misaligned in a way a spreadsheet will not complain about.
+const lines = csv.replace(/^\ufeff/, '').split('\r\n').filter(Boolean);
+const fieldCount = (line) => (line.match(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/g) ?? []).length + 1;
+const headerFields = fieldCount(lines[0]);
+const ragged = lines.filter((line) => fieldCount(line) !== headerFields);
+check('every row has the same shape as the header', ragged.length === 0, `${ragged.length} ragged rows`);
+await shot('15d-export');
 
 // --- reopening a signed record demands a reason and keeps it ---
 //

@@ -242,6 +242,139 @@ check('a task raised from a punch item carries the link, not a second copy', () 
 });
 
 // ---------------------------------------------------------------------------
+// Second-pair-of-eyes, when the company asks for it.
+// ---------------------------------------------------------------------------
+
+const doneBy = (who) =>
+  task({
+    state: 'done',
+    assignee: 'M. Okafor',
+    history: [
+      { at: NOW, to: 'assigned', by: 'sup@co.com' },
+      { at: NOW, to: 'done', by: who },
+    ],
+  });
+
+check('off by default: whoever did the work may still verify it', () => {
+  // The behaviour before the setting existed, and the one a two-person company
+  // depends on. Self-verification is recorded and shown, not refused.
+  assert.equal(t.canMove(doneBy('m@co.com'), 'verified', { actor: 'm@co.com' }).ok, true);
+});
+
+check('THE SECOND PAIR OF EYES: on, the same account is refused', () => {
+  const decision = t.canMove(doneBy('m@co.com'), 'verified', {
+    requireSecondVerifier: true,
+    actor: 'm@co.com',
+  });
+  assert.equal(decision.ok, false);
+  assert.match(decision.reason, /somebody other than whoever marked it done/i);
+});
+
+check('and anybody else is let through', () => {
+  assert.equal(
+    t.canMove(doneBy('m@co.com'), 'verified', {
+      requireSecondVerifier: true,
+      actor: 'sup@co.com',
+    }).ok,
+    true,
+  );
+});
+
+check('THE LOCKOUT: with no account signed in, the rule stands down', () => {
+  // Local mode has no accounts, so there is no second person to be. Refusing
+  // there would freeze the board of somebody who cannot satisfy the rule by
+  // any means at all — a safety valve that has become a wall.
+  assert.equal(
+    t.canMove(doneBy(undefined), 'verified', { requireSecondVerifier: true }).ok,
+    true,
+  );
+  assert.equal(
+    t.canMove(doneBy(undefined), 'verified', {
+      requireSecondVerifier: true,
+      actor: 'm@co.com',
+    }).ok,
+    true,
+    'a task marked done offline became unverifiable',
+  );
+});
+
+check('the rule reads the latest Done, so rework by somebody else clears it', () => {
+  const reworked = task({
+    state: 'done',
+    assignee: 'M. Okafor',
+    history: [
+      { at: '2026-08-01T00:00:00.000Z', to: 'done', by: 'sup@co.com' },
+      { at: '2026-08-02T00:00:00.000Z', to: 'in-progress', by: 'sup@co.com' },
+      { at: '2026-08-03T00:00:00.000Z', to: 'done', by: 'm@co.com' },
+    ],
+  });
+  assert.equal(
+    t.canMove(reworked, 'verified', { requireSecondVerifier: true, actor: 'sup@co.com' }).ok,
+    true,
+    'the supervisor was blocked by a Done they superseded',
+  );
+});
+
+check('the menu hides a move the policy would refuse', () => {
+  // Otherwise the button is there, does nothing visible, and the person
+  // pressing it concludes the app is broken rather than that the rule applies.
+  const moves = t.legalMoves(doneBy('m@co.com'), {
+    requireSecondVerifier: true,
+    actor: 'm@co.com',
+  });
+  assert.ok(!moves.includes('verified'));
+  assert.ok(t.legalMoves(doneBy('m@co.com'), { actor: 'm@co.com' }).includes('verified'));
+});
+
+check('applyMove enforces the policy too, not just the menu', () => {
+  // A screen that forgets to ask must not be able to write past the rule.
+  const before = doneBy('m@co.com');
+  const after = t.applyMove(before, 'verified', {
+    by: 'm@co.com',
+    now: NOW,
+    requireSecondVerifier: true,
+  });
+  assert.deepEqual(after, before);
+});
+
+// ---------------------------------------------------------------------------
+// What the verifier is supposed to be looking for.
+// ---------------------------------------------------------------------------
+
+check('a raised task inherits the checkpoint\'s own guidance', () => {
+  // The standard is already written on the checklist. Asking somebody to think
+  // of it again, in a basement, three weeks later, is how a verification
+  // becomes a glance.
+  const item = {
+    key: 'insp_1:q7',
+    inspectionId: 'insp_1',
+    critical: false,
+    question: {
+      id: 'q7',
+      text: 'Rim joist sealed at the south wall',
+      help: 'Two-part foam, full depth, no gaps at the sill plate.',
+    },
+    response: { note: 'left open', photoIds: [], answer: 'no' },
+  };
+  const raised = t.taskFromPunchItem(item, { customerId: 'c', id: 'task_9', now: NOW });
+  assert.equal(raised.verifyCriteria, 'Two-part foam, full depth, no gaps at the sill plate.');
+});
+
+check('a checkpoint with no guidance leaves it empty rather than echoing itself', () => {
+  // Repeating the question back as the criteria tells the verifier nothing and
+  // makes an empty field look like a filled one.
+  const item = {
+    key: 'insp_1:q7',
+    inspectionId: 'insp_1',
+    critical: false,
+    question: { id: 'q7', text: 'Rim joist sealed at the south wall' },
+    response: { photoIds: [], answer: 'no' },
+  };
+  const raised = t.taskFromPunchItem(item, { customerId: 'c', id: 'task_9', now: NOW });
+  assert.equal(raised.verifyCriteria, undefined);
+});
+
+// ---------------------------------------------------------------------------
 // Who checked whose work.
 // ---------------------------------------------------------------------------
 

@@ -74,10 +74,22 @@ export function isOpen(state: TaskState): boolean {
  */
 export type MoveDecision = { ok: true } | { ok: false; reason: string };
 
+/**
+ * How strict this company is about who may verify.
+ *
+ * `requireSecondVerifier` is the company's call, not ours — see `SharedConfig`.
+ * `actor` is the account attempting the move, and is absent in local mode,
+ * where there are no accounts and therefore no second person to be.
+ */
+export interface MovePolicy {
+  requireSecondVerifier?: boolean;
+  actor?: string;
+}
+
 export function canMove(
-  task: Pick<Task, 'state' | 'assignee' | 'archived'>,
+  task: Pick<Task, 'state' | 'assignee' | 'archived' | 'history'>,
   to: TaskState,
-  options: { note?: string } = {},
+  options: { note?: string } & MovePolicy = {},
 ): MoveDecision {
   if (task.archived) {
     return { ok: false, reason: 'This task has been archived.' };
@@ -114,14 +126,33 @@ export function canMove(
     };
   }
 
+  // Only where the company asked for it, and only where both accounts are
+  // known. An unknown identity is not evidence of a second person, but it is
+  // not evidence of the same one either — and refusing on it would freeze the
+  // board of anybody running without accounts, who cannot satisfy the rule by
+  // any means at all.
+  if (to === 'verified' && options.requireSecondVerifier && options.actor) {
+    const done = lastEventTo(task, 'done');
+    if (done?.by && done.by === options.actor) {
+      return {
+        ok: false,
+        reason:
+          'Your company asks for a second pair of eyes: this has to be verified by somebody other than whoever marked it done.',
+      };
+    }
+  }
+
   return { ok: true };
 }
 
 /** Every state this task could legally be moved to right now. */
-export function legalMoves(task: Pick<Task, 'state' | 'assignee' | 'archived'>): TaskState[] {
+export function legalMoves(
+  task: Pick<Task, 'state' | 'assignee' | 'archived' | 'history'>,
+  policy: MovePolicy = {},
+): TaskState[] {
   // A note is assumed available: the caller asks for one when it is needed, and
   // a move that is only blocked for want of a reason still belongs on the menu.
-  return TASK_STATES.filter((state) => canMove(task, state, { note: '.' }).ok);
+  return TASK_STATES.filter((state) => canMove(task, state, { note: '.', ...policy }).ok);
 }
 
 /**
@@ -135,9 +166,17 @@ export function legalMoves(task: Pick<Task, 'state' | 'assignee' | 'archived'>):
 export function applyMove(
   task: Task,
   to: TaskState,
-  actor: { by?: string; note?: string; now: string },
+  actor: { by?: string; note?: string; now: string } & { requireSecondVerifier?: boolean },
 ): Task {
-  if (!canMove(task, to, { note: actor.note }).ok) return task;
+  if (
+    !canMove(task, to, {
+      note: actor.note,
+      requireSecondVerifier: actor.requireSecondVerifier,
+      actor: actor.by,
+    }).ok
+  ) {
+    return task;
+  }
 
   const event: TaskEvent = { at: actor.now, to };
   if (actor.by) event.by = actor.by;
@@ -183,7 +222,7 @@ export function selfVerified(task: Task): boolean {
   return done.by === verified.by;
 }
 
-function lastEventTo(task: Task, state: TaskState): TaskEvent | undefined {
+function lastEventTo(task: Pick<Task, 'history'>, state: TaskState): TaskEvent | undefined {
   for (let index = task.history.length - 1; index >= 0; index -= 1) {
     if (task.history[index].to === state) return task.history[index];
   }
@@ -273,6 +312,11 @@ export function taskFromPunchItem(
     inspectionId: item.inspectionId,
     title: item.question.text,
     detail: item.response.note?.trim() || undefined,
+    // The checklist already carries the "what good looks like" line for this
+    // checkpoint. Somebody re-checking a correction from three weeks ago may
+    // never have seen the original failure, and asking them to work out the
+    // standard from the question alone is how a verification becomes a glance.
+    verifyCriteria: item.question.help?.trim() || undefined,
     state: 'new',
     critical: item.critical || undefined,
     history: [{ at: input.now, to: 'new', ...(input.by ? { by: input.by } : {}) }],

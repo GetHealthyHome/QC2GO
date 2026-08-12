@@ -102,3 +102,11 @@ alter table public.tombstones
 drop trigger if exists tasks_tombstone on public.tasks;
 create trigger tasks_tombstone after delete on public.tasks
   for each row execute function public.record_tombstone('task');
+
+-- Whether a work order has to be verified by somebody other than whoever
+-- marked it done. A company decision, not ours: some crews want a second pair
+-- of eyes on every correction, and a two-person company enforcing that would
+-- deadlock on its own rule. Off by default, which leaves self-verification
+-- possible and merely recorded.
+alter table public.shared_config
+  add column if not exists require_second_verifier boolean not null default false;

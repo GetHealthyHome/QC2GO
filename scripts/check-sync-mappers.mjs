@@ -291,8 +291,19 @@ const shared = {
   universalSection: { id: 'universal', title: 'Universal QC Standards', questions: [{ id: 'u1', text: 'Scope matches' }] },
   salespeople: ['Dana Reyes', 'Sam Okafor'],
   teamLeaders: ['Chris Lin'],
+  // Never set, and it must round-trip to exactly that rather than to `false`.
+  requireSecondVerifier: undefined,
   updatedAt: '2026-08-01T00:00:00.000Z',
 };
+
+check('the verification policy round trips, and off stays absent', () => {
+  // A company that never touched the setting must not come back from the
+  // server holding an explicit `false` — that is a different record, and it
+  // would make the round-trip check below fail for everybody who has not.
+  const strict = { ...shared, requireSecondVerifier: true };
+  assert.equal(m.rowToShared(m.sharedToRow(strict, ORG)).requireSecondVerifier, true);
+  assert.equal(m.rowToShared(m.sharedToRow(shared, ORG)).requireSecondVerifier, undefined);
+});
 
 check('shared config round trips, pick lists included', () => {
   const back = m.rowToShared(m.sharedToRow(shared, ORG));

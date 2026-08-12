@@ -792,7 +792,27 @@ than by us:
    by mistake would make that checkpoint permanently unassignable.
 
 Self-verification — the same account marking a task done and then verifying it —
-is **recorded and shown, not blocked**. A rule demanding a second account would
-deadlock a two-person company, and a rule that cannot be followed gets worked
-around rather than followed. It is the same choice the pencil-whipping checks
-make, for the same reason.
+is **a company setting rather than our opinion**. Some crews want a second pair
+of eyes on every correction; a two-person company enforcing that would deadlock
+on its own rule. So `requireSecondVerifier` sits on `shared_config` beside the
+name lists, off by default: off, self-verification happens and is recorded and
+shown on the task, which is what the pencil-whipping checks do with the same
+kind of signal; on, it is refused with a message that says why.
+
+The rule can only bite where it can be satisfied. It reads the *latest* `done`
+event, so rework by somebody else clears it rather than leaving a task stuck
+behind a supersededclaim; it stands down entirely when no account is signed in,
+because local mode has no second person to be; and `legalMoves` applies it too,
+so a move the policy would refuse is not offered as a button that appears to do
+nothing. Settings says out loud that a company with one account will find work
+orders stop at Done, which is the sentence that would otherwise have to be
+discovered.
+
+**What the verifier is looking for** is carried rather than remembered. The
+person re-checking a correction is often not the person who made it, and on
+something from three weeks ago may never have seen the original failure. A task
+raised from a checkpoint inherits that checkpoint's own `help` — the "what good
+looks like" line an admin already wrote on the checklist — as its verification
+criteria, editable per task and shown in the prompt at the moment of verifying.
+Where the checklist says nothing, the board asks somebody to, rather than
+leaving an inexperienced verifier to infer the standard from the question.

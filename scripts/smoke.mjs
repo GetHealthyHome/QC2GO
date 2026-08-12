@@ -530,6 +530,15 @@ check(
   /give this task to somebody/i.test(board),
   JSON.stringify(board.slice(0, 400)),
 );
+// This checkpoint carries no guidance line on the shipped checklist, so there
+// is nothing to inherit — and the board asks for it rather than leaving a
+// verifier to work out the standard for themselves. (The inheriting case is
+// covered in `check:tasks`, where a checkpoint with `help` can be constructed.)
+check(
+  'a task with nothing to verify against asks somebody to say what to check',
+  /say what to check before verifying/i.test(board),
+  JSON.stringify(board.slice(0, 500)),
+);
 
 // Typed rather than picked: the roster pick list is empty on a company that
 // has not filled it in, and a board nobody can assign anybody on is frozen.

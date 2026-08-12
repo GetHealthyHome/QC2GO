@@ -369,11 +369,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       const stored = await tasksRepo.get(id);
       if (!stored) return { ok: false, reason: 'That task is no longer on this device.' };
 
-      const decision = canMove(stored, to, { note });
+      const by = auth.profile?.email;
+      const policy = { requireSecondVerifier: shared.requireSecondVerifier, actor: by };
+
+      const decision = canMove(stored, to, { note, ...policy });
       if (!decision.ok) return decision;
 
       const now = new Date().toISOString();
-      const by = auth.profile?.email;
 
       // Verifying a linked task writes the deficiency's correction, not a
       // second record of it. `effectiveState` reads it back, so the punch
@@ -389,13 +391,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const next = applyMove(stored, to, { by, note, now });
+      const next = applyMove(stored, to, {
+        by,
+        note,
+        now,
+        requireSecondVerifier: shared.requireSecondVerifier,
+      });
       await tasksRepo.put(next);
       setTasks((current) => current.map((task) => (task.id === id ? next : task)));
       await enqueue('task', id, 'upsert');
       return { ok: true };
     },
-    [auth.profile?.email, updateCustomer],
+    [auth.profile?.email, shared.requireSecondVerifier, updateCustomer],
   );
 
   const removeTask = useCallback<StoreValue['removeTask']>(async (id) => {

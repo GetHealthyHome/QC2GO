@@ -349,6 +349,7 @@ export function sharedToRow(shared: SharedConfig, orgId: string): Row {
     universal_section: shared.universalSection,
     salespeople: shared.salespeople,
     team_leaders: shared.teamLeaders,
+    require_second_verifier: shared.requireSecondVerifier ?? false,
     updated_at: shared.updatedAt,
   };
 }
@@ -362,6 +363,9 @@ export function rowToShared(row: Row): SharedConfig {
       questions: [],
     },
     salespeople: stringArray(row.salespeople),
+    // Absent stays absent rather than becoming `false`: the field is optional
+    // on the device and a company that never set it should round-trip unchanged.
+    requireSecondVerifier: row.require_second_verifier === true ? true : undefined,
     teamLeaders: stringArray(row.team_leaders),
     updatedAt: iso(row.updated_at, new Date().toISOString()),
   };

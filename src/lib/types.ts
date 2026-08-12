@@ -158,6 +158,20 @@ export interface SharedConfig {
   /** Admin-maintained pick lists so field staff choose rather than type. */
   salespeople: string[];
   teamLeaders: string[];
+  /**
+   * Whether a work order has to be verified by somebody other than the account
+   * that marked it done.
+   *
+   * A company decision rather than ours. Some crews want a second pair of eyes
+   * on every correction; a two-person company enforcing that would deadlock on
+   * its own rule. Off by default, which keeps self-verification possible and
+   * merely recorded — turning it on makes it refused instead.
+   *
+   * It can only bite where accounts exist. In local mode nothing is signed in,
+   * so there is no second person to be, and the rule stands down rather than
+   * locking the board.
+   */
+  requireSecondVerifier?: boolean;
   updatedAt: string;
 }
 
@@ -400,6 +414,17 @@ export interface Task {
   state: TaskState;
   /** A name from the admin-maintained roster, not an account. */
   assignee?: string;
+  /**
+   * What to look for before calling this verified.
+   *
+   * The person re-checking work is often not the person who did it, and on a
+   * correction from three weeks ago they may never have seen the original
+   * failure. For a task raised from a checkpoint this starts as that
+   * checkpoint's own guidance — the "what good looks like" line an admin
+   * already wrote on the checklist — rather than as something somebody has to
+   * think of again while standing in a basement.
+   */
+  verifyCriteria?: string;
   /** Raised from a checkpoint the checklist marks critical. */
   critical?: boolean;
   /** `YYYY-MM-DD`, as typed — no time zone to get wrong. */

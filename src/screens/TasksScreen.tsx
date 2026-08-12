@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
+import { useAuth } from '../lib/auth';
 import {
   TASK_LABELS,
   TASK_STATES,
@@ -12,7 +13,18 @@ import {
 } from '../lib/tasks';
 import { formatDate, todayIso } from '../lib/inspection';
 import type { TaskState } from '../lib/types';
-import { Badge, Button, Card, EmptyState, Field, Screen, TextInput, TopBar, cx } from '../components/ui';
+import {
+  AutoTextarea,
+  Badge,
+  Button,
+  Card,
+  EmptyState,
+  Field,
+  Screen,
+  TextInput,
+  TopBar,
+  cx,
+} from '../components/ui';
 import { AlertIcon, ChevronRightIcon, ClipboardIcon, PlusIcon, TrashIcon } from '../components/Icons';
 
 /**
@@ -159,10 +171,15 @@ function FilterChip({
 }
 
 function TaskCard({ view }: { view: TaskView }) {
-  const { customers, moveTask, updateTask, removeTask } = useStore();
+  const { customers, shared, moveTask, updateTask, removeTask } = useStore();
+  const { profile } = useAuth();
   const [error, setError] = useState<string | null>(null);
+  const [criteriaDraft, setCriteriaDraft] = useState<string | null>(null);
   const customer = customers.find((candidate) => candidate.id === view.customerId);
-  const moves = legalMoves({ ...view, state: view.effective });
+  const moves = legalMoves(
+    { ...view, state: view.effective },
+    { requireSecondVerifier: shared.requireSecondVerifier, actor: profile?.email },
+  );
 
   async function move(to: TaskState) {
     setError(null);
@@ -176,7 +193,14 @@ function TaskCard({ view }: { view: TaskView }) {
       if (reason === null) return;
       note = reason;
     } else if (to === 'verified') {
-      const reason = window.prompt('What was done? (optional)');
+      // The standard first, then the question. Somebody re-checking a
+      // correction they did not make has no other way to know what "good"
+      // was supposed to look like here.
+      const reason = window.prompt(
+        view.verifyCriteria
+          ? `Check: ${view.verifyCriteria}\n\nWhat did you find? (optional)`
+          : 'What was done? (optional)',
+      );
       if (reason === null) return;
       note = reason;
     }
@@ -213,6 +237,50 @@ function TaskCard({ view }: { view: TaskView }) {
           {view.detail}
         </p>
       ) : null}
+
+      {/*
+        * What the person re-checking is looking for. Seeded from the
+        * checkpoint's own guidance where the checklist has any, and editable
+        * because the standard for a particular correction is not always the
+        * standard for the checkpoint in general.
+        */}
+      {criteriaDraft !== null ? (
+        <div className="mt-2">
+          <Field label="What to check before verifying">
+            <AutoTextarea
+              autoFocus
+              value={criteriaDraft}
+              placeholder="Two-part foam, full depth, no gaps at the sill plate."
+              onChange={(event) => setCriteriaDraft(event.target.value)}
+              onBlur={() => {
+                void updateTask(view.id, { verifyCriteria: criteriaDraft.trim() || undefined });
+                setCriteriaDraft(null);
+              }}
+            />
+          </Field>
+        </div>
+      ) : view.verifyCriteria ? (
+        <button
+          type="button"
+          onClick={() => setCriteriaDraft(view.verifyCriteria ?? '')}
+          className="mt-2 block w-full rounded-lg bg-brand-50 p-2.5 text-left"
+        >
+          <span className="text-[11px] font-semibold tracking-wide text-brand-700 uppercase">
+            Verify by
+          </span>
+          <span className="block text-[13px] leading-relaxed text-brand-800">
+            {view.verifyCriteria}
+          </span>
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setCriteriaDraft('')}
+          className="mt-2 py-1 text-[13px] font-semibold text-brand-700"
+        >
+          Say what to check before verifying
+        </button>
+      )}
 
       <div className="mt-3 grid grid-cols-2 gap-2">
         <Field label="Assigned to">

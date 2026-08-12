@@ -396,6 +396,39 @@ never attached to the document, which works in some browsers and is silently
 ignored in others — no file, no error, nothing to report. Both exports now share
 one helper that appends, clicks and cleans up.
 
+**`sweep-photos` — collecting files nothing points at.** Housekeeping, and the
+last item carried over from `supabase/README.md`'s "Still to build". Bytes go to
+the bucket before the row that makes them findable, so a row upload that fails
+after the file has landed leaves the file behind — invisible to the app and
+costing storage forever.
+
+It is worth recording *why* this one is written the way it is. It is the only
+code in QC2GO that destroys evidence: no undo, no second copy on the server, and
+a bug here does not produce a wrong number on a screen but removes the
+photographic record of a job somebody may need in a warranty dispute two years
+from now. So the decision is a pure function with four guards, each for a
+specific way it goes wrong.
+
+**A failed lookup is not an empty one.** This is the catastrophic bug this
+feature could have shipped with: a transient database error reading as "no
+photos exist" makes every file in the bucket an orphan. The two answers are
+different *types* here — `{ ok: false, reason }` versus a set of paths — because
+a type that cannot express the difference is one that will eventually make it.
+
+**Anything recent is left alone**, for seven days. A photo being uploaded right
+now has no row yet by definition, and an outbox entry retries with backoff on a
+device that can be offline for days.
+
+**A bucket that looks mostly orphaned is refused.** A renamed column, a changed
+path format or a half-read result set all present as a suspiciously high orphan
+rate rather than as an error. A genuine orphan rate is a rounding error. The
+check is skipped below twenty aged objects, though — one orphan in a bucket of
+two is 50% and perfectly ordinary, and a safety valve that never opens for a
+small company is a wall rather than a valve.
+
+**One run deletes at most 500**, and reports how many it held back, so a mistake
+that gets past all of the above is bounded and visible before it is total.
+
 **Pencil-whipping checks.** Roadmap item 12, and the two pieces of Module 3 worth
 building for a company running its own crews. A 60-checkpoint inspection answered
 in ninety seconds was not walked; a photograph taken twelve miles from the job is

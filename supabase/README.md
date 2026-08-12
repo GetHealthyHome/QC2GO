@@ -209,6 +209,41 @@ to the function automatically.
 Without `QC2GO_SITE_URL` the invitation link points at Supabase's own default and
 the person never reaches the app.
 
+### `sweep-photos`
+
+Bytes go to the bucket before the row that makes them findable, so that a row
+never points at a file that is not there. The cost is the other direction: a row
+upload that fails after the file has landed leaves the file behind, invisible to
+the app and costing storage forever. This deletes those.
+
+It is the only code in QC2GO that destroys evidence — no undo, no second copy on
+the server — so what it will and will not delete lives in a pure function
+(`sweep-photos/sweep.ts`) with four guards, each for a specific way this goes
+wrong:
+
+1. **A failed lookup is not an empty one.** "Could not read the photo rows" and
+   "no rows reference these files" are different types, because treating the
+   first as the second deletes the entire bucket on a transient error.
+2. **Anything recent is left alone**, for seven days. A photo being synced right
+   now has no row yet by definition.
+3. **A bucket that looks mostly orphaned is refused** rather than swept. A real
+   orphan rate is a rounding error; a half-read result set is a bug. The check
+   is skipped below twenty aged objects, where the fraction means nothing.
+4. **One run deletes at most 500**, and says how many it left behind, so a
+   mistake that gets past everything above is bounded and visible before it is
+   total.
+
+`npm run check:sweep` asserts all of it.
+
+```bash
+supabase functions deploy sweep-photos
+```
+
+Run it once with `{"dryRun": true}` before scheduling it on a deployment that has
+been running a while — it reports what it would collect and deletes nothing.
+Then schedule it daily from the SQL editor; the cron snippet is in the header of
+`sweep-photos/index.ts`.
+
 ### One thing to check in the dashboard
 
 Under **Authentication → URL Configuration**, add the deployment origin to
@@ -460,10 +495,6 @@ and back. A column renamed in a migration but not in `src/lib/syncMap.ts` is not
 a type error — the field simply arrives back empty — and this is what catches it.
 
 ## Still to build
-
-**Storage cleanup for abandoned uploads.** A photo whose row upload fails after
-the file has already gone to the bucket leaves the file behind. Rare, and it
-costs storage rather than correctness, but there is no sweeper for it yet.
 
 **Webhook events beyond `inspection.completed`.** The `events` column on an
 endpoint is an array and the trigger filters on it, so `inspection.created` and

@@ -21,13 +21,14 @@ import { letterheadName } from '../lib/branding';
 import { downloadFile } from '../lib/exportCsv';
 import { useAuth } from '../lib/auth';
 import { ShareLinks } from '../components/ShareLinks';
+import { IntegrityPanel } from '../components/IntegrityPanel';
 import { AlertIcon, CheckIcon, MinusIcon, PenIcon, PrinterIcon, ShareIcon, XIcon } from '../components/Icons';
 
 export function ReportScreen() {
   const { inspectionId } = useParams();
   const inspection = useInspection(inspectionId);
   const customer = useCustomer(inspection?.customerId);
-  const { updateInspection, settings } = useStore();
+  const { updateInspection, settings, isAdmin } = useStore();
   const auth = useAuth();
   const profile = auth.profile;
   const [viewingPhoto, setViewingPhoto] = useState<string | null>(null);
@@ -312,6 +313,15 @@ export function ReportScreen() {
             <SignatureBlock label="Customer" record={inspection.customerSignature} />
           </div>
         </ReportSection>
+
+        {/*
+          * Admins only, and not because it is secret. Telling the person being
+          * measured where the line sits is how you teach them to pace just above
+          * it — the check would go on firing on nobody and mean nothing.
+          */}
+        {completed && isAdmin ? (
+          <IntegrityPanel inspection={inspection} customer={customer} />
+        ) : null}
 
         {/*
           * Sharing needs a server to hand the link to, so it only appears on a

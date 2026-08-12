@@ -22,7 +22,8 @@
     "check:sections": "node scripts/check-sections.mjs",
     "check:share-access": "node scripts/check-share-access.mjs",
     "check:barcode": "node scripts/check-barcode.mjs",
-    "check:conditions": "node scripts/check-conditions.mjs"
+    "check:conditions": "node scripts/check-conditions.mjs",
+    "check:integrity": "node scripts/check-integrity.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

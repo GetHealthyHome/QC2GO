@@ -94,6 +94,13 @@ jobs:
       - name: Check conditional logic
         run: npm run check:conditions
 
+      # A fraud flag is only worth having if a supervisor still reads it in six
+      # months, and every false positive spends that credibility. The ways to
+      # generate one are ordinary: a short re-check, a record left open
+      # overnight, a walk interrupted by lunch, a GPS fix taken in a basement.
+      - name: Check the pencil-whipping heuristics
+        run: npm run check:integrity
+
       - name: Build
         run: npm run build
 

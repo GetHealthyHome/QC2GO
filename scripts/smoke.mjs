@@ -801,6 +801,41 @@ check(
 );
 await shot('29-condition-report', true);
 
+// --- record checks: does this look like it was actually walked? ---
+//
+// This run is the ideal fixture for it: Playwright answered twenty checkpoints
+// in a couple of seconds, which is exactly the pattern the velocity check
+// exists to notice. The inspection was reopened earlier, so re-sign it first —
+// the signatures survived, so completing is one button.
+await page.goto(inspectionUrl + '/review', { waitUntil: 'networkidle' });
+await page.waitForTimeout(700);
+await page.getByRole('button', { name: 'Complete inspection' }).click();
+await page.waitForURL(/\/report/);
+await page.waitForTimeout(900);
+
+const asAdmin = await page.locator('body').innerText();
+check('an admin sees the record checks on a signed report', /record checks/i.test(asAdmin));
+check(
+  'a run answered in seconds is flagged as unusually fast',
+  /unusually fast/i.test(asAdmin),
+  JSON.stringify(asAdmin.slice(0, 200)),
+);
+await shot('30-record-checks', true);
+
+// Not secret, but not shown to the person being measured either: telling them
+// where the line sits is how you teach them to pace just above it.
+await page.goto(BASE + '/#/settings', { waitUntil: 'networkidle' });
+await page.getByRole('button', { name: /^Inspector/ }).click();
+await page.waitForTimeout(400);
+await page.goto(inspectionUrl + '/report', { waitUntil: 'networkidle' });
+await page.waitForTimeout(900);
+const asInspector = await page.locator('body').innerText();
+check(
+  'an inspector does not see them on their own report',
+  !/record checks/i.test(asInspector) && !/unusually fast/i.test(asInspector),
+  JSON.stringify(asInspector.slice(0, 200)),
+);
+
 // --- quick safety audit from the home screen, at a brand new address ---
 await page.goto(BASE + '/', { waitUntil: 'networkidle' });
 await page.getByRole('link', { name: /Safety audit/ }).click();

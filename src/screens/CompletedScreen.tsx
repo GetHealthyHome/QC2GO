@@ -10,12 +10,13 @@ import {
   inspectionRows,
   toCsv,
 } from '../lib/exportCsv';
+import { velocityFlag, baselineFor } from '../lib/integrity';
 import { Badge, Button, Card, EmptyState, Screen, TopBar, cx, inputClass } from '../components/ui';
 import { AlertIcon, ChevronRightIcon, ClipboardIcon, SearchIcon, ShareIcon } from '../components/Icons';
 
 /** History across every job — what an inspector needs to recall a past walkthrough. */
 export function CompletedScreen() {
-  const { inspections, customers, templates, shared } = useStore();
+  const { inspections, customers, templates, shared, isAdmin } = useStore();
   const [query, setQuery] = useState('');
 
   const rows = useMemo(() => {
@@ -25,12 +26,26 @@ export function CompletedScreen() {
         const customer = customers.find((c) => c.id === inspection.customerId);
         const checklist = resolveChecklist(inspection, templates, shared);
         const progress = overallProgress(inspection, checklist?.sections ?? []);
-        return { inspection, customer, checklist, progress };
+        /*
+         * Only the timing check here. The photo one needs every photo record
+         * for the inspection, and those carry the image bytes — loading them
+         * for a whole history to draw one badge would be a great deal of memory
+         * for very little. It runs on the report, where the photos are already
+         * open.
+         *
+         * Admins only, and not because it is secret: telling the person being
+         * measured where the line sits is how you teach them to pace just above
+         * it, which would leave the check firing on nobody and meaning nothing.
+         */
+        const flag = isAdmin
+          ? velocityFlag(inspection, baselineFor(inspections, inspection.info.inspector, inspection.id))
+          : null;
+        return { inspection, customer, checklist, progress, flag };
       })
       .sort((a, b) =>
         (b.inspection.completedAt ?? '').localeCompare(a.inspection.completedAt ?? ''),
       );
-  }, [inspections, customers, templates, shared]);
+  }, [inspections, customers, templates, shared, isAdmin]);
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -106,7 +121,7 @@ export function CompletedScreen() {
           />
         ) : (
           <ul className="flex flex-col gap-2.5">
-            {visible.map(({ inspection, customer, checklist, progress }) => (
+            {visible.map(({ inspection, customer, checklist, progress, flag }) => (
               <Card as="li" key={inspection.id} className="active:bg-ink-50">
                 <Link
                   to={`/inspections/${inspection.id}/report`}
@@ -119,6 +134,12 @@ export function CompletedScreen() {
                         <Badge tone="fail">
                           <AlertIcon className="size-3" />
                           {progress.failed}
+                        </Badge>
+                      ) : null}
+                      {flag ? (
+                        <Badge tone="warn">
+                          <AlertIcon className="size-3" />
+                          {flag.label}
                         </Badge>
                       ) : null}
                     </div>

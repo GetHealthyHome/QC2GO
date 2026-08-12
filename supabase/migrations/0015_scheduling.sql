@@ -22,12 +22,15 @@
 -- which differs per deployment.
 --
 -- Both jobs are written so that a missing secret means they do nothing rather
--- than failing every minute against a null header. Set the two secrets and they
--- start working on their own:
+-- than failing every minute against a null header. Set `qc2go_service_role_key`
+-- and `qc2go_functions_url` in Vault and they start working on their own.
 --
---   select vault.create_secret('<service-role key>', 'qc2go_service_role_key');
---   select vault.create_secret('https://<ref>.supabase.co/functions/v1',
---                              'qc2go_functions_url');
+-- The statements for that are in `supabase/README.md` under Scheduling, and
+-- deliberately not repeated here: the key one validates what it is given before
+-- storing it, because every guard below asks whether a secret *exists* and none
+-- of them asks whether it is any good. A mis-pasted key is a job that runs on
+-- time, authenticates with nonsense, and 401s once a minute somewhere nobody is
+-- looking. `net._http_response` is where that shows up.
 
 do $$
 declare

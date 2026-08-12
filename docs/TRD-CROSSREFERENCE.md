@@ -801,7 +801,7 @@ kind of signal; on, it is refused with a message that says why.
 
 The rule can only bite where it can be satisfied. It reads the *latest* `done`
 event, so rework by somebody else clears it rather than leaving a task stuck
-behind a supersededclaim; it stands down entirely when no account is signed in,
+behind a superseded claim; it stands down entirely when no account is signed in,
 because local mode has no second person to be; and `legalMoves` applies it too,
 so a move the policy would refuse is not offered as a button that appears to do
 nothing. Settings says out loud that a company with one account will find work

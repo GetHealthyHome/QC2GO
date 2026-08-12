@@ -1,6 +1,6 @@
 # Supabase backend
 
-Five migrations:
+Six migrations:
 
 - **`0001_init.sql`** — tables, roles, row-level security, the photo storage
   bucket, and an office summary view.
@@ -16,11 +16,13 @@ Five migrations:
   signed in?" to "is this row theirs?".
 - **`0005_branding.sql`** — the company logo, so a report carries the mark of the
   company handing it over.
+- **`0006_audit_log.sql`** — an append-only ledger, and the reason a signed
+  inspection was unlocked.
 
-All five are replayed end-to-end from an empty PostgreSQL 16 database on every
+All six are replayed end-to-end from an empty PostgreSQL 16 database on every
 pull request, along with a two-company isolation suite — see
 [Proving the boundary](#proving-the-boundary). `0001` through `0004` are applied
-to the live project; `0005` applies on merge.
+to the live project; `0005` and `0006` apply on merge.
 
 ## Setting it up
 
@@ -231,6 +233,18 @@ addressable either.
 **`inspection_summary`** is one row per inspection with pass/fail/N-A counts
 computed from the responses JSON — the view to point a dashboard or a Google
 Sheets mirror at.
+
+**`audit_log`** is where a signed inspection being unlocked is recorded. It is
+append-only in the strongest sense the database offers: there is a select policy
+and **no insert, update or delete policy at all**, so the only thing that can add
+a row is a `security definer` trigger and nothing whatsoever can change or remove
+one.
+
+The reason itself is captured twice on purpose. `inspections.reopenings` holds it
+on the record — writable offline, carried by the ordinary sync, and shown on the
+report wherever it is read. The trigger copies each new entry into the ledger
+when the change reaches the server. The first copy is the convenient one and the
+second is the evidence.
 
 **`tombstones`** records what was deleted, so a device that was offline at the
 time finds out. Readable inside the company that owns the deleted row and

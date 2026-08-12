@@ -34,7 +34,7 @@ reported. It is not yet the platform around that slice.
 | 1 — Template Builder & Field Types | **~40%** | Full section/checkpoint authoring with versioned snapshots; 3 question types against the TRD's 15+, and no conditional logic, repeatable sections, or formulas. |
 | 2 — Evidence Capture & Media | **~25%** | Photos captured, downscaled, stored offline and rendered into the report. No annotation, no watermarking, no video/audio, no barcode, no AI. |
 | 3 — KYPiT Verification | **~5%** | Nothing of the risk engine exists. GPS is captured on the customer record, not on the evidence. |
-| 4 — Scoring, Workflows & Automation | **~35%** | A real scoring model with critical-failure override and hard sign-off blockers. No tasks, no punch list, no approval chain, no triage queue. |
+| 4 — Scoring, Workflows & Automation | **~40%** | A real scoring model with critical-failure override and hard sign-off blockers. No tasks, no punch list, no approval chain, no triage queue. |
 | 5 — Teams, Security & Access | **~60%** | Supabase auth, per-company tenancy with three roles, row-level security proven by an isolation suite, invitation-based onboarding, tombstoned deletes. No second (team) role layer, no external sharing, no SSO, no audit ledger. |
 | 6 — Reports, Exports & Integrations | **~25%** | Print-to-PDF report and JSON export; a Postgres summary view for the office. No branded layout engine, no .docx/.xlsx, no webhooks, no cloud sync. |
 
@@ -156,7 +156,7 @@ against adversarial external submitters.
 | Tasks & work orders, `New → Assigned → To Do → In Progress → Done → Verified` | **Gap** | No task entity exists. |
 | Punch lists & deficiency tracking to sign-off | **Partial** | The raw material is all there: `deficiencies()` (`src/lib/inspection.ts:95`) lists every failure with its photo and explanation, a `punch-recheck` visit type exists, and `Response.resolved` is modelled. What is missing is the cross-inspection view — "everything still open on this job" — and any assignment to a person or subcontractor. **Closing this is the highest-value item in Module 4** and reuses code that already exists. |
 | Custom statuses & approval routing (`Submitted → QA Review → Client Approved → Archived`) | **Gap** | `InspectionStatus` is `in-progress \| completed` (`src/lib/types.ts:151`). |
-| Inspection locking with rationale log on override | **Partial** | See Module 3 — locks, but no rationale, no ledger. |
+| Inspection locking with rationale log on override | **Built** | A completed inspection is read-only in the app and the server refuses edits to one from anybody but an admin. Unlocking now requires a reason (`src/screens/ReportScreen.tsx`), shows it on the report from then on, and a trigger copies it into `audit_log` — a table with a select policy and no insert, update or delete policy at all, so only a `security definer` trigger can write it and nothing can change it. |
 | Daily activity reports (batch PDF, emailed/webhooked) | **Gap** | Needs the server tier. |
 | Hard sign-off blockers | **Built — beyond the TRD** | `completionBlockers` (`src/lib/inspection.ts:142`) refuses sign-off until every required info field is filled, every checkpoint answered, **every No carries both a written explanation and a photo**, and both required signatures are present — each blocker deep-linking back to its question. The TRD never asks for this; it is the strongest thing in the app. |
 
@@ -173,7 +173,7 @@ against adversarial external submitters.
 | Third-party sharing — Assignee / Collaborator / Viewer, secure link over email/SMS, expiry, passcode | **Gap** | Nothing leaves the app except a printed PDF or a JSON file. A read-only expiring link to a finished report is the obvious first piece and the one a customer would actually use. |
 | SSO — SAML 2.0 / OIDC, OTP, OAuth | **Partial** | Supabase email + password, admin-provisioned, no self-signup. Supabase supports OAuth and OTP with configuration; SAML needs a paid tier. |
 | SOC 2 Type II, annual pen testing | **Gap** | Organizational, not code. |
-| Field-level immutable audit log (who, what, when, old, new) | **Gap** | Deletes leave tombstones written by trigger (`supabase/migrations/0003_sync.sql`) — good, and the right instinct — but updates overwrite in place with no history. |
+| Field-level immutable audit log (who, what, when, old, new) | **Partial** | `audit_log` (`0006`) exists and is genuinely append-only, but it records one action: a signed inspection being unlocked. Deletes leave tombstones (`0003`). Ordinary updates still overwrite in place with no history — the table is now there to extend rather than to build. |
 | Tenant isolation is verified, not assumed | **Built — beyond the TRD** | `npm run check:migrations` applies every migration to a real PostgreSQL, then attempts as one company to read, update, delete and insert into another's customers, inspections, roster, shared config, tombstones and photo bucket. CI runs it on every pull request. The TRD asks for SOC 2 and annual pen testing; this is the part of that promise that can be kept in the repository. |
 | Auth cannot be silently absent in production | **Built — beyond the TRD** | The app runs local-only without Supabase env vars, which is convenient and dangerous; a **Local mode** banner makes it visible, and CI builds a configured copy on every PR and asserts nothing is reachable without signing in (`npm run check:auth-gate`). |
 
@@ -343,6 +343,16 @@ exists. What landed, and what it changed in the tables above:
   signed-in caller to any object in it.
 - A migration and isolation suite in CI that creates two companies and tries to
   cross between them.
+
+**`0006_audit_log.sql` — reopening leaves a mark.** Unlocking a signed record
+took no reason and wrote nothing anywhere, so a QC record could be amended with
+no trace of who did it or why. It now needs a reason, shows it on the report, and
+a trigger copies it into a ledger with no write policy of any kind.
+
+The two-copy shape is the interesting part, and it comes from this app working
+offline: the reason lands on the inspection so it can be written with no signal
+and read anywhere, and the server keeps its own copy when the change syncs up.
+The first is convenient; the second is the evidence.
 
 **The invite flow — `invite-user` and Settings → People.** Provisioning a company
 was a SQL statement and so was every account in it. An owner now invites staff

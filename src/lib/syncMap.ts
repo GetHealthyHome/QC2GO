@@ -12,6 +12,7 @@ import type {
   Inspection,
   InspectionStatus,
   PhotoRecord,
+  ReopenRecord,
   Response,
   SharedConfig,
   SignatureRecord,
@@ -28,6 +29,11 @@ function text(value: unknown): string {
 
 function optionalText(value: unknown): string | undefined {
   return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function reopenList(value: unknown): ReopenRecord[] | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  return value as ReopenRecord[];
 }
 
 function stringArray(value: unknown): string[] {
@@ -114,6 +120,7 @@ export function inspectionToRow(inspection: Inspection, userId: string, orgId: s
     summary_notes: inspection.summaryNotes ?? null,
     inspector_sig: inspection.inspectorSignature ?? null,
     customer_sig: inspection.customerSignature ?? null,
+    reopenings: inspection.reopenings ?? [],
     created_by: inspection.createdBy ?? userId,
     created_at: inspection.createdAt,
     updated_at: inspection.updatedAt,
@@ -139,6 +146,9 @@ export function rowToInspection(row: Row): Inspection {
     summaryNotes: optionalText(row.summary_notes),
     inspectorSignature: (row.inspector_sig as SignatureRecord | null) ?? undefined,
     customerSignature: (row.customer_sig as SignatureRecord | null) ?? undefined,
+    // Absent rather than empty when there are none, so an inspection that was
+    // never reopened round-trips to exactly what it started as.
+    reopenings: reopenList(row.reopenings),
     createdBy: optionalText(row.created_by),
     createdAt: iso(row.created_at, now),
     updatedAt: iso(row.updated_at, now),

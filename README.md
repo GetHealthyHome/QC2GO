@@ -135,6 +135,12 @@ asserts exactly this: after adding a checkpoint to the universal section, a
 previously signed report is unchanged while a new inspection on the same job
 picks it up.
 
+### Reopening a signed inspection
+
+An admin can unlock a signed record, but not silently. A reason is required, it
+is shown on the report from then on, and the server writes it to an append-only
+ledger that nothing — not an admin, not an owner — can edit or delete.
+
 ### Sign-off rules
 
 An inspection cannot be completed until:

@@ -125,6 +125,7 @@ const TENANT_TABLES = [
   'inspections',
   'photos',
   'tombstones',
+  'audit_log',
 ];
 
 check('every tenant table carries org_id', () => {
@@ -365,6 +366,62 @@ check('a profile can read its own organization alongside itself', () => {
       where p.id = '${ACME}';`,
   );
   return row === 'owner@acme.test @ Acme QC' ? null : `got: ${row || '(nothing)'}`;
+});
+
+check('reopening a signed inspection writes a ledger row', () => {
+  psql(`
+    insert into public.inspections (id, org_id, customer_id, snapshot, visit_type, status, created_by, completed_at)
+    values ('insp-signed', 'aaaaaaaa-0000-0000-0000-000000000001', 'cust-acme', '{}',
+            'final-walkthrough', 'completed', '${ACME}', now());`);
+
+  tx(
+    ACME,
+    `update public.inspections
+        set status = 'in-progress',
+            completed_at = null,
+            reopenings = '[{"reason":"Wrong permit number captured","at":"2026-08-12T00:00:00Z"}]'
+      where id = 'insp-signed';`,
+  );
+
+  const row = psql(`
+    select action || ' | ' || coalesce(reason, '(none)') || ' | ' || coalesce(actor_email, '(nobody)')
+      from public.audit_log where entity_id = 'insp-signed';`);
+  return row === 'reopen | Wrong permit number captured | owner@acme.test'
+    ? null
+    : `ledger says: ${row || '(nothing)'}`;
+});
+
+check('an ordinary edit does not write a ledger row', () => {
+  // The trigger fires on every update. Firing on the wrong ones would bury the
+  // reopenings in noise, which is the same as not recording them.
+  const before = psql(`select count(*) from public.audit_log;`);
+  tx(ACME, `update public.inspections set summary_notes = 'ordinary edit' where id = 'insp-signed';`);
+  const after = psql(`select count(*) from public.audit_log;`);
+  return before === after ? null : `the ledger grew from ${before} to ${after}`;
+});
+
+check('nobody can edit or delete a ledger row', () => {
+  // There is deliberately no update or delete policy, so both match no rows
+  // rather than raising. Silence is the expected answer; a changed row is not.
+  tx(ACME, `update public.audit_log set reason = 'something more flattering';`);
+  tx(ACME, `delete from public.audit_log;`);
+  const row = psql(`select coalesce(reason, '') from public.audit_log where entity_id = 'insp-signed';`);
+  return row === 'Wrong permit number captured' ? null : `the ledger now says: "${row}"`;
+});
+
+check('nobody can forge a ledger row', () => {
+  const result = tx(
+    ACME,
+    `insert into public.audit_log (org_id, entity, entity_id, action)
+     values ('aaaaaaaa-0000-0000-0000-000000000001', 'inspection', 'insp-acme', 'invented');`,
+    { expectError: true },
+  );
+  return result?.error ? null : 'a client wrote straight into the ledger';
+});
+
+check('one company cannot read another\'s ledger', () => {
+  const seen = tx(BETA, `select entity_id from public.audit_log;`);
+  return seen.includes('insp-signed') ? 'Beta can read Acme\'s audit trail' : null;
 });
 
 check('an owner can withdraw an invitation, an admin cannot', () => {

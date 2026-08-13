@@ -143,6 +143,13 @@ jobs:
       - name: Check how a model reply is read
         run: npm run check:model-reply
 
+      # A preflight that does not name a header the client is about to send
+      # fails invisibly: the browser never sends the request, the function log
+      # shows OPTIONS 200 and no POST, and the app reports what looks like a
+      # network fault. Nothing else in CI would notice.
+      - name: Check the preflight allows what the client sends
+        run: npm run check:cors
+
       - name: Build
         run: npm run build
 

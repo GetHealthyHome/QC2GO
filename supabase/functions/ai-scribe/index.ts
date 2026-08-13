@@ -26,19 +26,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { ask, hasApiKey } from '../_shared/gemini.ts';
 import { MAX_CHARS, SYSTEM_PROMPT, acceptNote, acceptSuggestion } from './fidelity.ts';
-
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
-  });
-}
+import { json, preflight } from '../_shared/cors.ts';
 
 /**
  * Structured output rather than trusting the last line of the prompt.
@@ -54,7 +42,7 @@ const SCHEMA = {
 };
 
 Deno.serve(async (request: Request) => {
-  if (request.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+  if (request.method === 'OPTIONS') return preflight();
   if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405);
 
   // Asked here as well as inside `ask`, and before the meter, because the

@@ -19,22 +19,10 @@
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { authorizeInvite, type CallerProfile } from './authorize.ts';
-
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
-  });
-}
+import { json, preflight } from '../_shared/cors.ts';
 
 Deno.serve(async (request: Request) => {
-  if (request.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+  if (request.method === 'OPTIONS') return preflight();
   if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405);
 
   const url = Deno.env.get('SUPABASE_URL')!;

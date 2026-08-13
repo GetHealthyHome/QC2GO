@@ -31,6 +31,7 @@
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { ask, hasApiKey } from '../_shared/gemini.ts';
 import {
+import { json, preflight } from '../_shared/cors.ts';
   MAX_HELP,
   MAX_SUGGESTIONS,
   MAX_TEXT,
@@ -40,19 +41,6 @@ import {
   existingKeys,
   sift,
 } from './restraint.ts';
-
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-function json(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
-  });
-}
 
 /**
  * The shape the answer must take.
@@ -84,7 +72,7 @@ const SCHEMA = {
 };
 
 Deno.serve(async (request: Request) => {
-  if (request.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+  if (request.method === 'OPTIONS') return preflight();
   if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405);
 
   // Before the meter, because the allowance is claimed before the call and a

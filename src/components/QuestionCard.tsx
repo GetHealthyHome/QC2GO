@@ -4,8 +4,106 @@ import { getResponse, isScored, isYesNo } from '../lib/inspection';
 import { countCodes, mergeCodes, scanningSupported } from '../lib/barcode';
 import { AddPhotoButton, PhotoThumb } from './Photos';
 import { BarcodeScanner } from './BarcodeScanner';
-import { AlertIcon, BarcodeIcon, CameraIcon, CheckIcon, MinusIcon, PenIcon, XIcon } from './Icons';
+import {
+  AlertIcon,
+  BarcodeIcon,
+  CameraIcon,
+  CheckIcon,
+  MinusIcon,
+  PenIcon,
+  SparkleIcon,
+  XIcon,
+} from './Icons';
 import { Badge, cx } from './ui';
+import { canTidy, tidyNote } from '../lib/scribe';
+
+/**
+ * "Tidy up" — the one place a model touches an inspection, and it does not.
+ *
+ * A deficiency note is typed with one thumb, in a crawlspace, and then read by
+ * a homeowner. Cleaning it up is a real kindness. Rewriting what it alleges is
+ * a different matter: "no condensate trap" and "condensate trap installed
+ * incorrectly" are two accusations, and only one of them was made.
+ *
+ * So the suggestion arrives beside the original rather than in place of it,
+ * with both readable at once, and nothing changes until somebody presses Use
+ * this. The server refuses outright any suggestion that lost a measurement,
+ * gained one, or flipped a negative — see `ai-scribe/fidelity.ts` — but the
+ * last check is a person who can see both sentences.
+ */
+function TidyUp({
+  note,
+  readOnly,
+  onUse,
+}: {
+  note: string;
+  readOnly?: boolean;
+  onUse: (text: string) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [suggestion, setSuggestion] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  if (!canTidy(note, Boolean(readOnly))) return null;
+
+  async function tidy() {
+    setBusy(true);
+    setMessage(null);
+    setSuggestion(null);
+    const result = await tidyNote(note);
+    setBusy(false);
+    if (!result.ok) {
+      setMessage(result.error);
+      return;
+    }
+    if (!result.changed) {
+      setMessage('That already reads well — nothing to change.');
+      return;
+    }
+    setSuggestion(result.suggestion);
+  }
+
+  return (
+    <div className="mt-2">
+      {suggestion === null ? (
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => void tidy()}
+          className="flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[13px] font-semibold text-ink-600 disabled:opacity-60 active:bg-ink-100"
+        >
+          <SparkleIcon className="size-4" />
+          {busy ? 'Tidying up…' : 'Tidy up'}
+        </button>
+      ) : (
+        <div className="rounded-xl border border-brand-200 bg-white p-3">
+          <p className="text-[12px] font-bold tracking-wide text-brand-700 uppercase">Suggested</p>
+          <p className="mt-1.5 text-[15px] leading-snug text-ink-900">{suggestion}</p>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                onUse(suggestion);
+                setSuggestion(null);
+              }}
+              className="rounded-lg bg-brand-600 px-3 py-1.5 text-[13px] font-semibold text-white active:bg-brand-700"
+            >
+              Use this
+            </button>
+            <button
+              type="button"
+              onClick={() => setSuggestion(null)}
+              className="rounded-lg border border-ink-200 px-3 py-1.5 text-[13px] font-semibold text-ink-700 active:bg-ink-100"
+            >
+              Keep mine
+            </button>
+          </div>
+        </div>
+      )}
+      {message ? <p className="mt-1 text-[13px] text-ink-500">{message}</p> : null}
+    </div>
+  );
+}
 
 /**
  * Where equipment serial and model numbers go.
@@ -252,6 +350,11 @@ export function QuestionCard({
           {needsNote ? (
             <p className="mt-1 text-xs font-medium text-fail-700">An explanation is required.</p>
           ) : null}
+          <TidyUp
+            note={response.note ?? ''}
+            readOnly={readOnly}
+            onUse={(text) => onChange(question.id, { note: text })}
+          />
 
           <div className="mt-3 flex gap-2 overflow-x-auto pb-1 no-scrollbar">
             {response.photoIds.map((photoId) => (

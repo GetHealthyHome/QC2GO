@@ -129,8 +129,7 @@ as a conflict nobody can resolve.
 
 ## Edge Functions
 
-`supabase/functions/` holds the server-side code. There are four, and all four
-are deployed to the live project.
+`supabase/functions/` holds the server-side code.
 
 | Function | JWT | Called by |
 | --- | --- | --- |
@@ -138,6 +137,7 @@ are deployed to the live project.
 | `shared-report` | **none** | anybody holding a share link, with no account |
 | `deliver-webhooks` | required | `cron`, every minute |
 | `sweep-photos` | required | `cron`, daily at 04:00 UTC |
+| `ai-scribe` | required | an inspector, from a deficiency note |
 
 `shared-report` is the only one deployed with `--no-verify-jwt`, and that is the
 point of it: the recipient is a homeowner with a link, not a user. Everything it
@@ -264,6 +264,69 @@ Run it once with `{"dryRun": true}` before scheduling it on a deployment that ha
 been running a while — it reports what it would collect and deletes nothing.
 Then schedule it daily from the SQL editor; the cron snippet is in the header of
 `sweep-photos/index.ts`.
+
+### `ai-scribe`
+
+Cleans up one deficiency note when somebody asks it to. The first AI feature in
+QC2GO and deliberately the smallest: one note in, a suggestion out, nothing
+written to an inspection.
+
+It needs a secret that no other function needs:
+
+**Project Settings → Edge Functions → Secrets → Add new secret**
+
+| Name | Value |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | a key from console.anthropic.com |
+
+Without it the function answers 503 and the app says the feature is not switched
+on, which is a truthful description of a deployment that has not set it. Nothing
+else stops working.
+
+#### What stops it changing the report
+
+A deficiency note is read by the homeowner, quoted on the work order, and
+attached to a record somebody signs. The dangerous failure is not a clumsy
+sentence — it is a rewrite that changes the claim:
+
+> "no condensate trap" → "condensate trap installed incorrectly"
+
+Both are grammatical, both are about the same equipment, and they accuse the
+installer of different things. So `ai-scribe/fidelity.ts` throws away any
+suggestion that
+
+- lost a number, measurement, rating or serial that was in the original,
+- gained one that was not,
+- moved them into a different order, or
+- flipped the note from denying something to asserting it, or back.
+
+None of that needs an API key to test, and `npm run check:scribe` asserts every
+case — including the ones that must still be *accepted*, because a gate that
+refuses everything is a feature that does not ship.
+
+The last check is a person: the suggestion appears next to what was typed, and
+nothing changes until somebody presses **Use this**.
+
+The checkpoint's own wording is deliberately *not* sent to the model. Every fact
+put in front of it is a fact it can weave into a note the inspector did not
+write, and the fidelity check cannot tell an imported fact from an invented one.
+
+#### The bill
+
+Every other endpoint here costs the same whether it is called ten times or ten
+thousand. A model call does not, and the button that makes one sits on a text
+field. `0016_ai_usage.sql` adds `ai_usage` and `ai_take()`, which claims one call
+against the company's allowance for the day — 200, UTC — and refuses past it.
+The claim and the check are a single statement, because reading the count and
+then incrementing it is how two simultaneous calls both see the same number.
+
+The limit is not a parameter. The function is reachable over PostgREST by
+anybody signed in, and a limit passed in by the client being metered is not a
+limit. Changing it takes a migration.
+
+```bash
+supabase functions deploy ai-scribe
+```
 
 ### Scheduling
 

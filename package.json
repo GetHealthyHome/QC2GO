@@ -26,7 +26,8 @@
     "check:integrity": "node scripts/check-integrity.mjs",
     "check:sweep": "node scripts/check-sweep.mjs",
     "check:pdf-layout": "node scripts/check-pdf-layout.mjs",
-    "check:tasks": "node scripts/check-tasks.mjs"
+    "check:tasks": "node scripts/check-tasks.mjs",
+    "check:scribe": "node scripts/check-scribe.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

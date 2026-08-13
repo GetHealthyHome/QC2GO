@@ -122,6 +122,13 @@ jobs:
       - name: Check the work-order lifecycle
         run: npm run check:tasks
 
+      # A tidied-up deficiency note goes to the customer. The failure worth
+      # catching is not a clumsy sentence but a changed claim — a measurement
+      # dropped, a serial altered by a character, "no trap" coming back as
+      # "trap fitted incorrectly". None of that needs an API key to assert.
+      - name: Check what a tidied-up note may not become
+        run: npm run check:scribe
+
       - name: Build
         run: npm run build
 

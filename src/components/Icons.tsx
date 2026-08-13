@@ -103,6 +103,13 @@ export const PenIcon = (props: IconProps) => (
   </Icon>
 );
 
+export const SparkleIcon = (props: IconProps) => (
+  <Icon {...props}>
+    <path d="M12 3.5 13.6 8 18 9.5 13.6 11 12 15.5 10.4 11 6 9.5 10.4 8Z" />
+    <path d="M18.5 15.5 19.2 17.3 21 18l-1.8.7-.7 1.8-.7-1.8L16 18l1.8-.7Z" />
+  </Icon>
+);
+
 export const ShareIcon = (props: IconProps) => (
   <Icon {...props}>
     <path d="M12 3v13" />

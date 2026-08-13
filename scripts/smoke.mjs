@@ -207,6 +207,14 @@ for (let s = 1; s < (await chips.count()); s++) {
           .locator('input[type="file"]')
           .setInputFiles({ name: 'permit.png', mimeType: 'image/png', buffer: png });
         await page.waitForTimeout(400);
+        // Local mode has no server to ask, so the AI affordance must not be
+        // here at all. A button that is present and always fails is worse than
+        // one that is absent — it reads as a broken app rather than as a
+        // deployment without a backend.
+        check(
+          'no AI affordance where there is no backend to ask',
+          (await card.getByRole('button', { name: 'Tidy up' }).count()) === 0,
+        );
         await shot('09-deficiency-documented');
         continue;
       }

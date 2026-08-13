@@ -1,6 +1,6 @@
 # Supabase backend
 
-Fifteen migrations:
+Sixteen migrations:
 
 - **`0001_init.sql`** — tables, roles, row-level security, the photo storage
   bucket, and an office summary view.
@@ -34,11 +34,34 @@ Fifteen migrations:
 - **`0015_scheduling.sql`** — the timer for the two functions nobody calls by
   hand. Every statement in it is guarded, because it also has to be a no-op on
   the plain PostgreSQL the isolation suite runs against.
+- **`0016_ai_usage.sql`** — a ceiling on what the AI features can cost a company
+  in a day, and the only table a model call touches.
 
-All fifteen are replayed end-to-end from an empty PostgreSQL 16 database on every
+All sixteen are replayed end-to-end from an empty PostgreSQL 16 database on every
 pull request, along with a two-company isolation suite — see
-[Proving the boundary](#proving-the-boundary). All fifteen are applied to the
-live project; new ones apply on merge.
+[Proving the boundary](#proving-the-boundary).
+
+### Replayed in CI is not the same as applied to the project
+
+A migration merges whether or not anything has run it against the live database,
+and CI going green says only that it *would* apply cleanly to an empty one. The
+failure that follows is quiet: the app keeps working, because nothing else reads
+the new table, right up until somebody reaches the one feature that needed it —
+which then fails looking like a broken feature rather than an unapplied
+migration.
+
+So before relying on a new migration, check that it is actually there. Each one
+adds something nameable:
+
+```sql
+-- 0016, for example
+select to_regprocedure('public.ai_take(text)');
+```
+
+`null` means it has not been applied. Apply it by pasting the file into **SQL
+Editor**, or with `supabase db push`. Every migration here is written to be safe
+to run twice — guarded `create ... if not exists`, `create or replace`, `drop
+policy if exists` — so re-running one you were unsure about is not a risk.
 
 ## Setting it up
 

@@ -30,8 +30,8 @@
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { ask, hasApiKey } from '../_shared/gemini.ts';
-import {
 import { json, preflight } from '../_shared/cors.ts';
+import {
   MAX_HELP,
   MAX_SUGGESTIONS,
   MAX_TEXT,

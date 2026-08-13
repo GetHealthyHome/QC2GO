@@ -129,6 +129,20 @@ jobs:
       - name: Check what a tidied-up note may not become
         run: npm run check:scribe
 
+      # A suggested checkpoint has no original to be checked against, so the
+      # rule is about standing rather than accuracy: the model may propose what
+      # to check, never what passes. A threshold it invented would arrive in a
+      # company's checklist with nobody's decision behind it.
+      - name: Check what a suggested checkpoint may not claim
+        run: npm run check:checkpoints
+
+      # A model that runs into its output limit returns the answer so far, and
+      # for a one-field object that is often still valid JSON. It parses, the
+      # field is there, and it is half a sentence — indistinguishable downstream
+      # from a complete answer unless the stop reason is read.
+      - name: Check how a model reply is read
+        run: npm run check:model-reply
+
       - name: Build
         run: npm run build
 

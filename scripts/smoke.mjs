@@ -858,6 +858,13 @@ await page.waitForTimeout(300);
 await page.getByLabel('Section title').fill('Access & Safety');
 await page.getByPlaceholder('What is the inspector checking?').first()
   .fill('Attic access is clear and safe to enter');
+// Local mode has no server to ask, so the second AI affordance is absent for
+// the same reason the first one is: a button that is always going to fail
+// reads as a broken app rather than as a deployment without a backend.
+check(
+  'no checkpoint suggestions where there is no backend to ask',
+  (await page.getByRole('button', { name: 'Suggest checkpoints' }).count()) === 0,
+);
 await shot('20-new-checklist');
 await page.getByRole('button', { name: 'Save changes' }).click();
 await page.waitForTimeout(600);

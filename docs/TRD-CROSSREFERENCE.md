@@ -100,7 +100,7 @@ two-layer org/team hierarchy does not yet — there is one layer, of three roles
 | — Calculated fields (SUM/AVG/MIN/MAX) | **Gap** | Scores are computed (`scoreOf`, `src/lib/inspection.ts:257`) but there is no user-authored formula. |
 | Conditional logic (if/then, nested, score-triggered) | **Partial** | One level: `showIf` on a section or a checkpoint, naming an earlier checkpoint and the answers that reveal it. Hidden blocks are not asked, not scored, not blockers, and not punch items — and the report lists them with the reason, so a skipped question and a deleted one do not look identical. Nested chains and score-triggered reveals are not built; the editor can only point a condition *backwards*, which is what makes a loop unauthorable. |
 | Repeatable sections (per room / per zone / per head) | **Built** | A section marked repeatable runs once per instance, added on site and named by the inspector (`0012_repeatable_sections.sql`, `expandSections` in `src/lib/inspection.ts`). Each instance is answered and scored separately, so a failure names the head it belongs to. The TRD's `instance_index` has a home. |
-| AI template builder (natural language) | **Gap** | — |
+| AI template builder (natural language) | **Partial** | Section at a time rather than checklist at a time. An admin describes one section and gets a handful of proposed checkpoints, each added or discarded on its own (`supabase/functions/ai-checkpoints/`). The endpoint writes nothing. What makes the narrow version defensible is the rule in `restraint.ts`: the model may propose *what to check*, never *what passes* — any number the admin did not supply is treated as invented and the suggestion is discarded, asserted by `npm run check:checkpoints`. Generating a whole checklist from a prompt is still a gap, and the reason is in that rule: a full template is mostly the standards it sets. |
 | Public template library (1,000+) | **Adapt** | Six shipped checklists (`src/templates/index.ts`), all written for this company's actual scopes, plus in-app authoring. A generic public library is the wrong target; a *shared company library* synced across devices is already effectively there via the `templates` table. |
 | Template versioning — revision log, side-by-side diff, rollback | **Partial** | This is where QC2GO is *stronger* than the TRD in one respect and weaker in another. Stronger: every inspection freezes its own `TemplateSnapshot` at start (`src/lib/checklist.ts:16`), so history is structurally immune to later edits — the TRD only promises rollback "without altering historical records", which snapshots guarantee outright. Weaker: `version` is a bare counter, there is no per-change revision log (who/when/what), no diff view, and the only rollback is "reset to shipped version". |
 
@@ -327,12 +327,25 @@ Ordered by value per unit of effort, with the dependency that gates each one.
     for in-house crews, computable from data already stored.
 13. **Tasks & work orders** with the TRD's six-state lifecycle, once punch lists
     have proven the assignment model.
-14. ~~**AI Scribe**~~ (built), then **AI template generation**, then **AI
-    Walkthroughs** — in that order of cost and risk. Scribe went first because
-    it is the cheapest to run and the easiest to make safe: one note, one call,
-    and a suggestion nobody has to take. The two that follow are harder for the
-    same reason in reverse — a generated template and a transcribed walkthrough
-    both produce content with no original to check them against.
+14. ~~**AI Scribe**~~ (built), ~~**AI template generation**~~ (built, narrowly),
+    then **AI Walkthroughs** — in that order of cost and risk. Scribe went first
+    because it is the cheapest to run and the easiest to make safe: one note,
+    one call, and a suggestion nobody has to take.
+
+    Template generation landed as *checkpoint suggestions for one section*
+    rather than whole-checklist generation, because the difficulty flagged here
+    turned out to have a sharper form than "no original to check against". The
+    thing a generated checklist gets wrong is not its wording, it is its
+    numbers: a plausible threshold arrives with nobody's decision behind it and
+    an inspector scores somebody's work against it. So the model proposes what
+    to check and never what passes, which is a rule that can actually be
+    enforced — and one a whole generated template would mostly consist of
+    breaking. Whole-checklist generation stays open for that reason rather than
+    for want of effort.
+
+    **AI Walkthroughs** is still the hardest of the three, and for the original
+    reason: a transcript produces content with no original at all, and no
+    equivalent of the numbers rule suggests itself.
 
 **Deliberately not pursued** (revisit only if the app opens to outside
 subcontractors): domain/WHOIS analytics, carrier lookup, VPN/Tor detection, the

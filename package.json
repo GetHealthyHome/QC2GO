@@ -27,7 +27,9 @@
     "check:sweep": "node scripts/check-sweep.mjs",
     "check:pdf-layout": "node scripts/check-pdf-layout.mjs",
     "check:tasks": "node scripts/check-tasks.mjs",
-    "check:scribe": "node scripts/check-scribe.mjs"
+    "check:scribe": "node scripts/check-scribe.mjs",
+    "check:checkpoints": "node scripts/check-checkpoints.mjs",
+    "check:model-reply": "node scripts/check-model-reply.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.112.3",

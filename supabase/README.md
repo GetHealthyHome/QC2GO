@@ -271,13 +271,8 @@ Cleans up one deficiency note when somebody asks it to. The first AI feature in
 QC2GO and deliberately the smallest: one note in, a suggestion out, nothing
 written to an inspection.
 
-It needs a secret that no other function needs:
-
-**Project Settings → Edge Functions → Secrets → Add new secret**
-
-| Name | Value |
-| --- | --- |
-| `ANTHROPIC_API_KEY` | a key from console.anthropic.com |
+It needs `GEMINI_API_KEY`, which is set once and shared with `ai-checkpoints` —
+see [The AI key](#the-ai-key) below.
 
 Without it the function answers 503 and the app says the feature is not switched
 on, which is a truthful description of a deployment that has not set it. Nothing
@@ -327,6 +322,120 @@ limit. Changing it takes a migration.
 ```bash
 supabase functions deploy ai-scribe
 ```
+
+### `ai-checkpoints`
+
+Proposes checkpoints for one section of a checklist. An admin describes what the
+section covers — "condensate and drainage on a ductless head" — and gets back a
+handful of suggestions, each added or discarded on its own.
+
+**This function writes nothing.** It has no `service_role` key and touches no
+table but the meter. The section changes when an admin presses **Add** on a
+suggestion, in the client, through the same store a hand-typed checkpoint goes
+through.
+
+Admins and owners only, checked against the caller's own profile row rather than
+anything in the request. Editing a checklist is already an admin action in the
+app, and an endpoint that spends the company's AI allowance should not be the
+one place an inspector can reach past that.
+
+#### What stops it inventing the standard
+
+`ai-scribe` had an original to check its answer against: the note the inspector
+typed. Generation has nothing of the kind, and no amount of checking turns a
+proposed checkpoint into one that somebody with the equipment in front of them
+wrote. So `ai-checkpoints/restraint.ts` does not try to decide whether a
+checkpoint is *right*. It decides whether it is the model's place to say it.
+
+The failure it is built around is not a badly worded question. It is a
+threshold:
+
+> "Verify total external static pressure is below 0.5 in. w.c."
+
+That reads like the rest of the checklist and on many systems it is roughly
+right. But it is a company standard arriving in a company's checklist with
+nobody's decision behind it, and the inspector who meets it in the field will
+score somebody's work against it.
+
+**The model may propose what to check. It may not propose what passes.** Any
+number in a suggestion that the admin did not put in their own description is
+treated as invented, and the suggestion carrying it is thrown away — using the
+same `facts()` that decides which numbers a tidied note may not change, so the
+two features cannot drift apart on what counts as a number. "Record the measured
+total external static pressure" survives; the sentence above does not.
+
+Three smaller rules go with it. A suggestion already in the section is refused,
+compared on stemmed significant words so that a rewording is caught as well as a
+reordering. `critical`, `photoOnPass` and `informational` are never carried
+across whatever the model sends — whether failing an item blocks sign-off is a
+policy decision with a person behind it, one tap away in the editor. And how
+many suggestions were discarded is shown rather than hidden, because a silent
+gate looks like a model with no ideas and gets pressed again.
+
+What it deliberately does not do is judge trade accuracy. A suggestion to check
+a component this equipment does not have passes every rule here. That is why
+nothing is written by this endpoint.
+
+`npm run check:checkpoints` asserts every case, and needs no API key.
+
+```bash
+supabase functions deploy ai-checkpoints
+```
+
+### The AI key
+
+Both AI features read one secret, in one place — `_shared/gemini.ts`. Nothing
+else in the codebase reads it, which is what makes moving to a different Google
+AI Studio account a change to a secret rather than a change to code.
+
+**Getting a key**
+
+1. Sign in at [aistudio.google.com](https://aistudio.google.com) with the Google
+   account that should own the billing.
+2. **Get API key** in the left sidebar → **Create API key**.
+3. AI Studio associates the key with a Google Cloud project, creating one if the
+   account has none. Keys minted here are *auth keys*, which is what you want —
+   the Gemini API stopped accepting unrestricted standard keys in June 2026 and
+   stops accepting standard keys altogether in September 2026.
+4. Copy it once. AI Studio will not show it again.
+
+**Installing it**
+
+**Project Settings → Edge Functions → Secrets → Add new secret**
+
+| Name | Value |
+| --- | --- |
+| `GEMINI_API_KEY` | the key from step 4 |
+
+Then redeploy both functions, since a secret is read at invocation but a
+function that has never been deployed cannot read anything:
+
+```bash
+supabase functions deploy ai-scribe
+supabase functions deploy ai-checkpoints
+```
+
+The key never goes in the repository, in `.env`, or in a message to anybody. It
+is in the Supabase secret store and in AI Studio, and those are the two places
+it should exist.
+
+**Moving to a different account**
+
+The same three steps, in this order, so there is no window where the feature is
+broken:
+
+1. Mint a key on the new account.
+2. Overwrite the `GEMINI_API_KEY` secret with it. Running functions pick it up
+   on their next invocation; nothing needs redeploying for a value change.
+3. Only then, delete the old key in the old account's AI Studio.
+
+Doing (3) first gives you an outage between the delete and the update. The app
+degrades honestly during one — 503, "not switched on" — but there is no reason
+to have it.
+
+Both features stop and start together, because they share the key. If they ever
+need to be billed separately they need separate secrets, and `_shared/gemini.ts`
+is the one file that would change.
 
 ### Scheduling
 

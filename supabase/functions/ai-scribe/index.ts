@@ -20,11 +20,11 @@
  * write, and the fidelity check cannot tell an imported fact from an invented
  * one. The note goes on its own.
  *
- * Secrets:  ANTHROPIC_API_KEY  (Project Settings -> Edge Functions -> Secrets)
- * Deploy:   supabase functions deploy ai-scribe
+ * Secret:  GEMINI_API_KEY  (Project Settings -> Edge Functions -> Secrets)
+ * Deploy:  supabase functions deploy ai-scribe
  */
-import Anthropic from 'npm:@anthropic-ai/sdk';
 import { createClient } from 'jsr:@supabase/supabase-js@2';
+import { ask, hasApiKey } from '../_shared/gemini.ts';
 import { MAX_CHARS, SYSTEM_PROMPT, acceptNote, acceptSuggestion } from './fidelity.ts';
 
 const CORS = {
@@ -47,24 +47,21 @@ function json(body: unknown, status = 200): Response {
  * it the answer occasionally arrives wrapped in "Here is the tidied note:",
  * which the fidelity check would then have to treat as part of the note.
  */
-const FORMAT = {
-  type: 'json_schema' as const,
-  schema: {
-    type: 'object',
-    properties: { note: { type: 'string' } },
-    required: ['note'],
-    additionalProperties: false,
-  },
+const SCHEMA = {
+  type: 'object',
+  properties: { note: { type: 'string' } },
+  required: ['note'],
 };
 
 Deno.serve(async (request: Request) => {
   if (request.method === 'OPTIONS') return new Response('ok', { headers: CORS });
   if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405);
 
-  const apiKey = Deno.env.get('ANTHROPIC_API_KEY');
-  if (!apiKey) {
-    // A deployment without the secret is a deployment where this feature is
-    // off. Saying so is better than a 500 that reads like a bug.
+  // Asked here as well as inside `ask`, and before the meter, because the
+  // allowance is claimed before the call. A deployment that never set the
+  // secret would otherwise spend a company's whole daily allowance on a button
+  // that was never going to work.
+  if (!hasApiKey()) {
     return json({ error: 'Tidying up notes is not switched on for this deployment.' }, 503);
   }
 
@@ -102,41 +99,21 @@ Deno.serve(async (request: Request) => {
     );
   }
 
-  let raw: unknown;
-  try {
-    const response = await new Anthropic({ apiKey }).messages.create({
-      model: 'claude-opus-5',
-      // A tidied note cannot be much longer than the note, and the note is
-      // capped. This is a backstop against paying for an essay, not a target.
-      max_tokens: 2048,
-      system: SYSTEM_PROMPT,
-      output_config: {
-        // Copy-editing one sentence does not reward deliberation, and somebody
-        // is watching a spinner on a phone while it happens.
-        effort: 'low',
-        format: FORMAT,
-      },
-      messages: [{ role: 'user', content: request_.note.slice(0, MAX_CHARS) }],
-    });
-
-    // Checked before the content is read, because on a refusal the content does
-    // not follow the schema and `note` may not be there at all.
-    if (response.stop_reason === 'refusal') {
-      return json({ error: 'That note could not be tidied up. Your note is unchanged.' }, 422);
-    }
-
-    const text = response.content.find((block) => block.type === 'text');
-    raw = text ? (JSON.parse(text.text) as { note?: unknown }).note : undefined;
-  } catch (problem) {
-    // Includes a malformed body from JSON.parse above. Either way the honest
-    // answer is the same: nothing usable came back, and the note is untouched.
-    return json(
-      { error: problem instanceof Error ? problem.message : 'The note could not be tidied up.' },
-      502,
-    );
+  const answer = await ask<{ note?: unknown }>({
+    system: SYSTEM_PROMPT,
+    user: request_.note.slice(0, MAX_CHARS),
+    schema: SCHEMA,
+    // A tidied note cannot be much longer than the note, and the note is
+    // capped. This is a backstop against paying for an essay, not a target.
+    maxOutputTokens: 2048,
+  });
+  if (!answer.ok) {
+    // Every one of these leaves the note alone, so say so rather than leaving
+    // somebody wondering whether their text was touched.
+    return json({ error: `${answer.reason} Your note is unchanged.` }, answer.status);
   }
 
-  const verdict = acceptSuggestion(request_.note, raw);
+  const verdict = acceptSuggestion(request_.note, answer.value.note);
   if (!verdict.ok) return json({ error: verdict.reason }, verdict.status);
 
   return json({ suggestion: verdict.text, changed: verdict.changed });

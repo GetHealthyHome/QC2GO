@@ -32,7 +32,6 @@ export function CustomerScreen() {
   const inspections = useCustomerInspections(customerId);
   const { templates, shared, updateCustomer, removeCustomer, createInspection } = useStore();
 
-  const [newDay, setNewDay] = useState(todayIso());
   const [visitType, setVisitType] = useState<VisitType>('site-visit');
   const [starting, setStarting] = useState(false);
 
@@ -45,6 +44,25 @@ export function CustomerScreen() {
     [available, customer?.templateIds],
   );
   const days = useMemo(() => groupByVisitDate(inspections), [inspections]);
+
+  const today = todayIso();
+  /**
+   * The ticked checklists today has not finished with — what one press acts on.
+   *
+   * A checklist with a run still open counts as pending even if an earlier run
+   * of it was completed today: the open one is the work in front of somebody.
+   */
+  const pending = useMemo(() => {
+    const finished = new Set<string>();
+    const running = new Set<string>();
+    for (const inspection of inspections) {
+      if (inspection.visitDate !== today) continue;
+      (inspection.status === 'completed' ? finished : running).add(inspection.templateId);
+    }
+    return selected.filter(
+      (template) => running.has(template.id) || !finished.has(template.id),
+    );
+  }, [selected, inspections, today]);
   const punch = useMemo(
     () => punchListFor(customer, inspections, templates, shared),
     [customer, inspections, templates, shared],
@@ -70,12 +88,56 @@ export function CustomerScreen() {
     void updateCustomer(customer.id, { templateIds: next });
   }
 
-  async function start(templateId: string) {
-    if (!customer || starting) return;
+  /**
+   * Begin the walkthrough for everything this job is ticked for.
+   *
+   * One press rather than one per checklist, and no date to choose: a
+   * walkthrough happens on the day somebody is standing in the house, so the
+   * day is today and asking was a field between the inspector and the work.
+   *
+   * What one press does depends on what today already holds, because the same
+   * button has to survive being pressed again — which is what somebody does
+   * every time they come back to their phone:
+   *
+   *  - not started today  ->  started
+   *  - under way today    ->  resumed, never duplicated
+   *  - finished today     ->  left alone; its QC card is at the top of the page
+   *
+   * When every ticked checklist is finished the button says so and offers the
+   * only thing left to want — a fresh run of all of them. That is the old
+   * "Run again", kept rather than lost to the simpler button.
+   *
+   * It navigates to what this press *started*, falling back to what it resumed.
+   * Pressing it to add one checklist to a day should open that checklist, not
+   * drop you back into something you already had open.
+   */
+  async function startWalkthrough() {
+    if (!customer || starting || selected.length === 0) return;
     setStarting(true);
     try {
-      const inspection = await createInspection(customer.id, templateId, visitType, newDay);
-      navigate(`/inspections/${inspection.id}`);
+      const again = pending.length === 0;
+      const targets = again ? selected : pending;
+      const openToday = new Map(
+        inspections
+          .filter((i) => i.visitDate === today && i.status !== 'completed')
+          .map((i) => [i.templateId, i]),
+      );
+
+      let created: string | undefined;
+      let resumed: string | undefined;
+      for (const template of targets) {
+        // A deliberate re-run starts fresh even where something is open.
+        const running = again ? undefined : openToday.get(template.id);
+        if (running) {
+          resumed ??= running.id;
+          continue;
+        }
+        const made = await createInspection(customer.id, template.id, visitType);
+        created ??= made.id;
+      }
+
+      const go = created ?? resumed;
+      if (go) navigate(`/inspections/${go}`);
     } finally {
       setStarting(false);
     }
@@ -91,9 +153,9 @@ export function CustomerScreen() {
     navigate('/', { replace: true });
   }
 
-  const startedToday = new Set(
-    inspections.filter((i) => i.visitDate === newDay).map((i) => i.templateId),
-  );
+  const runningToday = inspections.filter(
+    (i) => i.visitDate === today && i.status !== 'completed',
+  ).length;
 
   const details: Array<[string, string | undefined]> = [
     ['Address', customer.address],
@@ -154,6 +216,42 @@ export function CustomerScreen() {
           ) : null}
         </Card>
 
+        {/*
+          QC cards, directly under the customer box.
+          What happened on this job is the thing somebody opens this screen to
+          find. It used to be last, below the checklist tick-list and the punch
+          list, which meant scrolling past the setup for the job to reach the
+          record of it.
+        */}
+        <h2 className="mt-6 mb-2.5 px-1 text-[13px] font-bold tracking-wide text-ink-500 uppercase">
+          QC Cards
+        </h2>
+        {days.length === 0 ? (
+          <Card className="p-4">
+            <p className="text-[13px] text-ink-500">
+              Completed checklists appear here as QC cards, grouped by the day they cover.
+            </p>
+          </Card>
+        ) : (
+          <div className="flex flex-col gap-5">
+            {days.map(([day, dayInspections]) => (
+              <div key={day}>
+                <div className="mb-2 flex items-baseline justify-between px-1">
+                  <h3 className="text-[15px] font-bold text-ink-900">{formatDate(day)}</h3>
+                  <span className="text-xs text-ink-500">
+                    {dayInspections.length} checklist{dayInspections.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {dayInspections.map((inspection) => (
+                    <QCCard key={inspection.id} inspection={inspection} />
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Checkboxes: which QC areas apply to this job. */}
         <h2 className="mt-6 mb-2 px-1 text-[13px] font-bold tracking-wide text-ink-500 uppercase">
           Checklists for this job
@@ -174,45 +272,33 @@ export function CustomerScreen() {
           ))}
         </ul>
 
-        {/* Start work for a given day. */}
-        <h2 className="mt-6 mb-2.5 px-1 text-[13px] font-bold tracking-wide text-ink-500 uppercase">
-          Start a checklist
-        </h2>
-        <Card className="p-4">
-          <div className="flex flex-col gap-3">
-            <label className="block">
-              <span className="mb-1.5 block text-[13px] font-semibold text-ink-700">
-                Visit day
-              </span>
-              <input
-                type="date"
-                value={newDay}
-                onChange={(event) => setNewDay(event.target.value || todayIso())}
-                className="w-full rounded-xl border border-ink-200 bg-white px-3.5 py-3 text-ink-900 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-              />
-            </label>
-            <div>
-              <span className="mb-1.5 block text-[13px] font-semibold text-ink-700">
-                Visit type
-              </span>
-              <div className="flex flex-wrap gap-1.5">
-                {VISIT_TYPES.map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    aria-pressed={visitType === type}
-                    onClick={() => setVisitType(type)}
-                    className={cx(
-                      'rounded-full px-3 py-2 text-xs font-semibold transition-colors',
-                      visitType === type
-                        ? 'bg-ink-900 text-white'
-                        : 'border border-ink-200 bg-white text-ink-600',
-                    )}
-                  >
-                    {VISIT_TYPE_LABELS[type]}
-                  </button>
-                ))}
-              </div>
+        {/*
+          One button, once there is something to run.
+          The day is today — a walkthrough happens while somebody is standing in
+          the house — so the only thing left to say is which kind of visit it is.
+        */}
+        <Card className="mt-3 p-4">
+          <div>
+            <span className="mb-1.5 block text-[13px] font-semibold text-ink-700">
+              Visit type
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {VISIT_TYPES.map((type) => (
+                <button
+                  key={type}
+                  type="button"
+                  aria-pressed={visitType === type}
+                  onClick={() => setVisitType(type)}
+                  className={cx(
+                    'rounded-full px-3 py-2 text-xs font-semibold transition-colors',
+                    visitType === type
+                      ? 'bg-ink-900 text-white'
+                      : 'border border-ink-200 bg-white text-ink-600',
+                  )}
+                >
+                  {VISIT_TYPE_LABELS[type]}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -221,24 +307,28 @@ export function CustomerScreen() {
               Tick at least one checklist above before starting.
             </p>
           ) : (
-            <div className="mt-4 flex flex-col gap-2">
-              {selected.map((template) => (
-                <Button
-                  key={template.id}
-                  variant="secondary"
-                  block
-                  disabled={starting}
-                  className="justify-between"
-                  onClick={() => void start(template.id)}
-                >
-                  <span className="truncate text-left">{template.name}</span>
-                  <span className="flex shrink-0 items-center gap-1.5 text-xs font-bold text-brand-700">
-                    {startedToday.has(template.id) ? 'Run again' : 'Start'}
-                    <PlusIcon className="size-4" />
-                  </span>
-                </Button>
-              ))}
-            </div>
+            <>
+              <Button
+                block
+                className="mt-4"
+                disabled={starting}
+                onClick={() => void startWalkthrough()}
+              >
+                <PlusIcon className="size-5" />
+                {starting
+                  ? 'Starting…'
+                  : pending.length === 0
+                    ? 'Run QC Walkthrough again'
+                    : 'Start QC Walkthrough'}
+              </Button>
+              <p className="mt-2 text-center text-xs text-ink-500">
+                {pending.length === 0
+                  ? `All ${selected.length} finished today`
+                  : `${pending.length} checklist${pending.length === 1 ? '' : 's'} · today${
+                      runningToday > 0 ? ` · ${runningToday} under way` : ''
+                    }`}
+              </p>
+            </>
           )}
         </Card>
 
@@ -281,36 +371,6 @@ export function CustomerScreen() {
             </Card>
           </>
         ) : null}
-
-        {/* QC cards, grouped by the day they cover. */}
-        <h2 className="mt-6 mb-2.5 px-1 text-[13px] font-bold tracking-wide text-ink-500 uppercase">
-          QC Cards
-        </h2>
-        {days.length === 0 ? (
-          <Card className="p-4">
-            <p className="text-[13px] text-ink-500">
-              Completed checklists appear here as QC cards, grouped by the day they cover.
-            </p>
-          </Card>
-        ) : (
-          <div className="flex flex-col gap-5">
-            {days.map(([day, dayInspections]) => (
-              <div key={day}>
-                <div className="mb-2 flex items-baseline justify-between px-1">
-                  <h3 className="text-[15px] font-bold text-ink-900">{formatDate(day)}</h3>
-                  <span className="text-xs text-ink-500">
-                    {dayInspections.length} checklist{dayInspections.length === 1 ? '' : 's'}
-                  </span>
-                </div>
-                <div className="flex flex-col gap-2">
-                  {dayInspections.map((inspection) => (
-                    <QCCard key={inspection.id} inspection={inspection} />
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
 
         <button
           type="button"

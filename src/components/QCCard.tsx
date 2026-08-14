@@ -6,10 +6,25 @@ import { useStore } from '../lib/store';
 import { Badge, Card, ProgressBar, cx } from './ui';
 import { AlertIcon, ChevronRightIcon } from './Icons';
 
+/**
+ * The outline is the result, readable without reading anything.
+ *
+ * A `ring` rather than a border. `Card` already sets `border-ink-200`, and two
+ * border-colour utilities on one element do not resolve by the order they are
+ * written in the class attribute — the winner is whichever Tailwind emitted
+ * later, which is not something this file can see or rely on. The old
+ * `border-pass-200` here was in that fight and losing it silently. A ring is a
+ * different property, so it cannot be overridden by accident, and it draws
+ * outside the border where an outline belongs.
+ *
+ * Green for a pass, red for a failure, amber in between: a score can be too low
+ * to sign off on and too high to call a failure, and colouring that red would
+ * put it beside a job with a dead CO alarm.
+ */
 const BAND_STYLES = {
-  pass: { ring: 'border-pass-200', chip: 'bg-pass-500', text: 'text-pass-700' },
-  watch: { ring: 'border-warn-200', chip: 'bg-warn-500', text: 'text-warn-700' },
-  fail: { ring: 'border-fail-200', chip: 'bg-fail-500', text: 'text-fail-700' },
+  pass: { ring: 'ring-2 ring-pass-500', chip: 'bg-pass-500', text: 'text-pass-700' },
+  watch: { ring: 'ring-2 ring-warn-500', chip: 'bg-warn-500', text: 'text-warn-700' },
+  fail: { ring: 'ring-2 ring-fail-500', chip: 'bg-fail-500', text: 'text-fail-700' },
 } as const;
 
 /**

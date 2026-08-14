@@ -13,32 +13,41 @@
   --color-ink-900: #121820;
 
   /*
-   * The brand blue is the deep teal-blue of the QC2GO mark (#1b5c7e), not a
-   * generic UI blue. 600 is the mark's own value; the rest of the ramp is built
-   * around it so buttons, badges and the sign-in screen sit beside the logo
-   * rather than clashing with it.
+   * The brand blue, #156082 — the QC2GO palette's own value, not a generic UI
+   * blue and not an approximation of it. 600 is that colour exactly; the rest
+   * of the ramp carries the same hue and saturation at each step's lightness,
+   * so buttons, badges and the sign-in screen sit beside the logo rather than
+   * near it.
    */
-  --color-brand-50: #eff7fb;
-  --color-brand-100: #d7ecf5;
-  --color-brand-200: #aed7ea;
-  --color-brand-300: #78b9d8;
-  --color-brand-400: #4394bd;
-  --color-brand-500: #26759f;
-  --color-brand-600: #1b5c7e;
-  --color-brand-700: #174c69;
-  --color-brand-800: #163f57;
-  --color-brand-900: #14344a;
+  --color-brand-50: #eef8fc;
+  --color-brand-100: #d5eef7;
+  --color-brand-200: #abdaed;
+  --color-brand-300: #72bede;
+  --color-brand-400: #3c9bc4;
+  --color-brand-500: #1f7ba6;
+  --color-brand-600: #156082;
+  --color-brand-700: #12506e;
+  --color-brand-800: #12425b;
+  --color-brand-900: #11364d;
 
   /*
-   * The mark's orange. Used as an accent — never for pass or fail, which have
-   * their own colours and must not be confused with "look here".
+   * The palette's orange, #e97132. An accent — never for pass or fail, which
+   * have their own colours and must not be confused with "look here".
    */
-  --color-accent-50: #fef3ed;
-  --color-accent-100: #fbe0d0;
-  --color-accent-200: #f7c1a4;
-  --color-accent-500: #e4632a;
-  --color-accent-600: #c9501c;
-  --color-accent-700: #a34118;
+  --color-accent-50: #fef4ed;
+  --color-accent-100: #fce1cf;
+  --color-accent-200: #f9c4a2;
+  --color-accent-500: #e97132;
+  --color-accent-600: #cc5519;
+  --color-accent-700: #a64515;
+
+  /*
+   * The palette's neutral grey. The `ink` ramp above is the UI's own neutral
+   * and is deliberately blue-tinted to sit under the brand blue; this is the
+   * true grey the brand documents specify, kept available for anything that
+   * has to match printed material exactly rather than merely look right.
+   */
+  --color-brand-grey: #bfbfbf;
 
   --color-pass-50: #ecfdf3;
   --color-pass-100: #d1fadf;

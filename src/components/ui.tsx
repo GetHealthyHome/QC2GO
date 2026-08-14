@@ -242,6 +242,7 @@ export function TopBar({
   subtitle,
   back,
   onBack,
+  logo,
   actions,
   /** Off when the caller pins the bar itself, e.g. stacked above a progress header. */
   sticky = true,
@@ -257,6 +258,12 @@ export function TopBar({
    * anything — it just hides the loss behind the less obvious exit.
    */
   onBack?: () => void;
+  /**
+   * Draw the wordmark instead of the title, for the screen that is the app
+   * rather than a place inside it. `title` stays the accessible name, so a
+   * screen reader still hears "QC2GO" and nothing has to be duplicated.
+   */
+  logo?: boolean;
   actions?: ReactNode;
   sticky?: boolean;
 }) {
@@ -294,7 +301,19 @@ export function TopBar({
           </Link>
         ) : null}
         <div className="min-w-0 flex-1">
-          <h1 className="truncate text-[17px] leading-tight font-semibold">{title}</h1>
+          {logo ? (
+            <h1>
+              <img
+                src="/qc2go-logo.png"
+                alt={title}
+                width={720}
+                height={214}
+                className="h-6 w-auto"
+              />
+            </h1>
+          ) : (
+            <h1 className="truncate text-[17px] leading-tight font-semibold">{title}</h1>
+          )}
           {subtitle ? <p className="truncate text-xs text-white/60">{subtitle}</p> : null}
         </div>
         {actions ? <div className="flex shrink-0 items-center gap-1">{actions}</div> : null}

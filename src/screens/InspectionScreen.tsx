@@ -6,6 +6,7 @@ import {
   VISIT_TYPE_LABELS,
   conditionMet,
   expandSections,
+  formatDate,
   getResponse,
   instanceTitle,
   instancesOf,
@@ -235,8 +236,20 @@ export function InspectionScreen() {
         />
         <div className="border-b border-ink-200 bg-white/95 backdrop-blur">
           <div className="mx-auto w-full max-w-3xl px-3 pt-2.5">
-          <div className="flex items-center justify-between gap-3 text-xs font-semibold text-ink-500">
-            <span className="tabular-nums">
+          {/* Wraps as whole items: badges drop to a second line rather than
+              "3 of 53 answered" breaking across one. */}
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs font-semibold text-ink-500">
+            {/*
+              The day this run covers, at the top of the checklist it belongs to.
+              A checklist gets run against the same job more than once — a site
+              visit, then a re-check — and each run carries its own date from the
+              moment it is started. Without it on the page, two runs of the same
+              checklist are indistinguishable while you are standing in one.
+            */}
+            <span className="shrink-0 rounded-md bg-ink-100 px-2 py-0.5 text-ink-700 tabular-nums">
+              {formatDate(inspection.visitDate)}
+            </span>
+            <span className="ml-auto whitespace-nowrap tabular-nums">
               {progress.answered} of {progress.total} answered
             </span>
             <span className="flex items-center gap-1.5">

@@ -12,6 +12,7 @@
  */
 import {
   VISIT_TYPE_LABELS,
+  deficiencies,
   expandSections,
   formatDate,
   formatDateTime,
@@ -116,6 +117,29 @@ export function buildReportDocument(input: {
       ? `Signed off ${formatDateTime(inspection.completedAt)}`
       : `In progress — last updated ${formatDateTime(inspection.updatedAt)}`,
   });
+
+  // Everything that failed, gathered and put first — the same list the screen
+  // opens with, built from the same `deficiencies()` read so the file and the
+  // page cannot disagree about what has to be fixed. The sections further down
+  // still carry each failure in context; this is so nobody has to hunt six
+  // pages of green marks to find the three red ones.
+  const failures = deficiencies(inspection, sections);
+  if (failures.length > 0) {
+    elements.push({
+      kind: 'heading',
+      text: 'Deficiencies',
+      meta: `${failures.length} to address`,
+      tone: 'fail',
+    });
+    for (const item of failures) {
+      const note = item.response.note?.trim();
+      elements.push({
+        kind: 'row',
+        text: `${item.question.text}${item.question.critical ? '  (critical)' : ''}`,
+        sub: [item.sectionTitle, note || 'No explanation recorded.'].join(' — '),
+      });
+    }
+  }
 
   const fields = checklist.infoFields
     .map((field) => ({

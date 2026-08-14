@@ -136,6 +136,12 @@ jobs:
       - name: Check what a suggested checkpoint may not claim
         run: npm run check:checkpoints
 
+      # One upload can rewrite every checklist in a company, and the round trip
+      # is the point of the format: export, edit in Excel, upload. A writer and
+      # a reader that disagree by one column name fail after the editing.
+      - name: Check the checklist spreadsheet round-trips
+        run: npm run check:checklist-csv
+
       # A model that runs into its output limit returns the answer so far, and
       # for a one-field object that is often still valid JSON. It parses, the
       # field is there, and it is half a sentence — indistinguishable downstream

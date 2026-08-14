@@ -177,55 +177,57 @@ function SerialField({
 }
 
 /**
- * The three answers, each carrying its own colour whether or not it is the one
- * given.
+ * The three answers: a mark, then the word for it.
  *
- * They used to be grey until pressed and then flood with colour. That reads
- * well on a desk and badly on a roof: the inspector had to read three words to
- * find the one they wanted, every time, because until it was pressed nothing
- * about the Yes button was green. Now the mark is always a white circle ringed
- * in its own colour — green tick, red cross, grey dash — so the control is
- * recognised by shape and colour rather than by reading it.
+ * No box. Each answer is a circle with the label beside it, so what an
+ * inspector reads left to right is the thing and its name — tick Yes, cross No,
+ * N/A N/A — rather than three identical tiles they have to read the middle of.
+ * Losing the border also loses the strongest thing on the card, which was
+ * competing with the checkpoint text it sits under.
  *
- * Which one was chosen is then carried by the tile behind it: its border takes
- * the colour, the background takes the palest shade of it, and the label goes
- * bold in it. That is a bigger, higher-contrast change than the old filled pill
- * and it leaves the circle itself alone, so the three marks never move or
- * change while an inspector's thumb is over them.
+ * The circle carries everything. Unpressed it is white, ringed and marked in
+ * its own colour, so the control is recognised by shape and colour rather than
+ * by reading it — the thing that made the old grey-until-pressed version slow
+ * on a roof. Pressed, it fills with that colour: green, red or grey. One
+ * element moves, and it is the one being pointed at.
  */
 const ANSWER_BUTTONS: Array<{
   value: Answer;
   label: string;
   Icon: typeof CheckIcon;
-  /** The circle. Constant — it says which answer this is, not whether it won. */
+  /** Drawn instead of an icon. "N/A" reads as itself; a dash does not. */
+  glyph?: string;
+  /** The circle, unpressed: white, in this answer's colour. */
   mark: string;
-  /** The tile, once this is the answer given. */
-  selected: string;
-  idle: string;
+  /** The circle, once this is the answer given: filled with it. */
+  filled: string;
+  /** The word beside it, once chosen. */
+  chosen: string;
 }> = [
   {
     value: 'yes',
     label: 'Yes',
     Icon: CheckIcon,
     mark: 'border-pass-500 text-pass-600',
-    selected: 'border-pass-500 bg-pass-50 text-pass-700',
-    idle: 'border-ink-200 bg-white text-ink-500 active:bg-pass-50',
+    filled: 'border-pass-600 bg-pass-500 text-white',
+    chosen: 'text-pass-700',
   },
   {
     value: 'no',
     label: 'No',
     Icon: XIcon,
     mark: 'border-fail-500 text-fail-600',
-    selected: 'border-fail-500 bg-fail-50 text-fail-700',
-    idle: 'border-ink-200 bg-white text-ink-500 active:bg-fail-50',
+    filled: 'border-fail-600 bg-fail-500 text-white',
+    chosen: 'text-fail-700',
   },
   {
     value: 'na',
     label: 'N/A',
     Icon: MinusIcon,
+    glyph: 'N/A',
     mark: 'border-ink-400 text-ink-500',
-    selected: 'border-ink-500 bg-ink-100 text-ink-700',
-    idle: 'border-ink-200 bg-white text-ink-500 active:bg-ink-100',
+    filled: 'border-ink-600 bg-ink-500 text-white',
+    chosen: 'text-ink-700',
   },
 ];
 
@@ -317,7 +319,7 @@ export function QuestionCard({
         </div>
 
         <div className="mt-3.5 grid grid-cols-3 gap-2">
-          {ANSWER_BUTTONS.map(({ value, label, Icon, mark, selected, idle }) => {
+          {ANSWER_BUTTONS.map(({ value, label, Icon, glyph, mark, filled, chosen }) => {
             const isSelected = response.answer === value;
             return (
               <button
@@ -332,17 +334,21 @@ export function QuestionCard({
                   })
                 }
                 className={cx(
-                  'flex min-h-13 flex-col items-center justify-center gap-1 rounded-xl border-2 text-[13px] font-bold transition-colors disabled:opacity-70',
-                  isSelected ? selected : idle,
+                  'flex min-h-12 items-center justify-center gap-2 rounded-xl text-[13px] font-bold transition-colors disabled:opacity-70',
+                  isSelected ? chosen : 'text-ink-500',
                 )}
               >
                 <span
                   className={cx(
-                    'flex size-6 items-center justify-center rounded-full border-2 bg-white',
-                    mark,
+                    'flex size-7 shrink-0 items-center justify-center rounded-full border-2 transition-colors',
+                    isSelected ? filled : cx('bg-white', mark),
                   )}
                 >
-                  <Icon className="size-3.5" strokeWidth={3.5} />
+                  {glyph ? (
+                    <span className="text-[10px] leading-none font-bold">{glyph}</span>
+                  ) : (
+                    <Icon className="size-4" strokeWidth={3.5} />
+                  )}
                 </span>
                 {label}
               </button>

@@ -24,7 +24,14 @@ await p.goto((process.env.AUTH_URL ?? 'http://localhost:4174') + '/', { waitUnti
 await p.waitForTimeout(1500);
 const text = await p.locator('body').innerText();
 check('sign-in screen is shown', text.includes('Sign in'), JSON.stringify(text.slice(0, 90)));
-check('tagline on sign-in', text.includes('Quality in motion'));
+// The tagline is drawn into the lockup rather than set as text beneath it, so
+// it is the image's accessible name that has to carry it — which is the thing
+// worth asserting anyway. A logo whose alt text is "logo" passes an eyeball
+// test and tells somebody using a screen reader nothing.
+check(
+  'the lockup names the company, tagline and all',
+  (await p.getByRole('img', { name: /QC2GO — Quality in motion/ }).count()) > 0,
+);
 check(
   'app content is NOT reachable',
   !text.includes('New customer') && !text.includes('Near me'),

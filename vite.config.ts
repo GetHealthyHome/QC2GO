@@ -9,7 +9,15 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'brandmark.svg', 'icon-192.png', 'icon-512.png'],
+      // Precached so the logo is there on the sign-in screen offline, which is
+      // where somebody with no signal meets the app for the first time.
+      includeAssets: [
+        'favicon-32.png',
+        'apple-touch-icon.png',
+        'qc2go-logo.png',
+        'icon-192.png',
+        'icon-512.png',
+      ],
       manifest: {
         name: 'QC2GO — Quality in motion',
         short_name: 'QC2GO',

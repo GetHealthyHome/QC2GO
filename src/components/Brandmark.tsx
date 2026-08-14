@@ -1,36 +1,25 @@
 /**
- * The QC2GO mark, inline rather than an <img>.
+ * How the app introduces itself: the full lockup, above whatever it is asking
+ * for. Used by the three screens shown before there is an app to look at —
+ * sign-in, setting a password, and the one that says you are in no company yet.
  *
- * The screens that use it are the ones shown before anything else has loaded —
- * sign-in, the invitation landing, the no-company screen — and an <img> there
- * is a request that can still be in flight while somebody is looking at the
- * page. Inline, it is simply there.
+ * The tagline is part of the artwork rather than text under it, because the
+ * lockup is how the company draws its own name and the kerning of "QUALITY IN
+ * MOTION" against the mark is a decision somebody made. The cost is that the
+ * words cannot be translated or selected, which is why `alt` carries them.
+ *
+ * A PNG, not an SVG. The supplied artwork is a raster inside an SVG wrapper and
+ * has its background baked in; `brand/README.md` covers what is generated from
+ * it and why keying the white before downscaling is what avoids a fringe.
  */
-export function Brandmark({ className, title }: { className?: string; title?: string }) {
+export function BrandLockup() {
   return (
-    <svg
-      viewBox="0 0 100 100"
-      className={className}
-      role={title ? 'img' : 'presentation'}
-      aria-label={title}
-      aria-hidden={title ? undefined : true}
-    >
-      <g fill="none" strokeWidth="19" strokeLinecap="butt">
-        <path d="M48 15 A 31 31 0 0 0 48 77" stroke="#E97132" />
-        <path d="M48 15 A 31 31 0 0 1 67.9 69.7" stroke="#156082" />
-      </g>
-      <circle cx="79" cy="79" r="11.5" fill="#E97132" />
-    </svg>
-  );
-}
-
-/** The mark above the wordmark, as the app introduces itself. */
-export function BrandLockup({ subtitle = 'Quality in motion' }: { subtitle?: string }) {
-  return (
-    <div className="flex flex-col items-center">
-      <Brandmark className="size-16" title="QC2GO" />
-      <h1 className="mt-3 text-3xl font-bold tracking-tight text-white">QC2GO</h1>
-      <p className="mt-1 text-sm text-white/60">{subtitle}</p>
-    </div>
+    <img
+      src="/qc2go-lockup.png"
+      alt="QC2GO — Quality in motion"
+      width={760}
+      height={224}
+      className="mx-auto h-auto w-64 max-w-full"
+    />
   );
 }

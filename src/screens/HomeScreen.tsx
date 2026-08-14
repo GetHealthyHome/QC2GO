@@ -132,6 +132,7 @@ export function HomeScreen() {
   return (
     <>
       <TopBar
+        logo
         title="QC2GO"
         subtitle="Quality in motion"
         actions={

@@ -16,7 +16,7 @@ import {
 import type { Answer, Question, SignatureRecord } from '../lib/types';
 import { PhotoViewer, usePhoto } from '../components/Photos';
 import { AnnotatedPhoto } from '../components/AnnotatedPhoto';
-import { Badge, Button, Card, Screen, TopBar, cx } from '../components/ui';
+import { Badge, Button, Card, Screen, TopBar, cx, topBarActionClass } from '../components/ui';
 import { Letterhead } from '../components/Letterhead';
 import { letterheadName } from '../lib/branding';
 import { downloadFile } from '../lib/exportCsv';
@@ -139,7 +139,7 @@ export function ReportScreen() {
             type="button"
             onClick={() => window.print()}
             aria-label="Print report"
-            className="flex size-10 items-center justify-center rounded-xl text-white/80 active:bg-white/10"
+            className={topBarActionClass}
           >
             <PrinterIcon className="size-5" />
           </button>

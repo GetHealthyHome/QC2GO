@@ -12,7 +12,7 @@ import {
 import { categoryLabel } from '../templates';
 import type { Template, VisitType } from '../lib/types';
 import { QCCard } from '../components/QCCard';
-import { Badge, Button, Card, Screen, TopBar, cx } from '../components/ui';
+import { Badge, Button, Card, Screen, TopBar, cx, topBarActionClass } from '../components/ui';
 import {
   AlertIcon,
   CheckIcon,
@@ -175,7 +175,7 @@ export function CustomerScreen() {
           <Link
             to={`/customers/${customer.id}/edit`}
             aria-label="Edit customer"
-            className="flex size-10 items-center justify-center rounded-xl text-white/80 active:bg-white/10"
+            className={topBarActionClass}
           >
             <PenIcon className="size-5" />
           </Link>

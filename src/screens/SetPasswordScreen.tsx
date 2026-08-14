@@ -40,13 +40,13 @@ export function SetPasswordScreen() {
   }
 
   return (
-    <div className="safe-pt safe-pb flex min-h-screen flex-col justify-center bg-ink-900 px-5 py-10">
+    <div className="safe-pt safe-pb flex min-h-screen flex-col justify-center bg-white px-5 py-10">
       <div className="mx-auto w-full max-w-sm">
         <div className="mb-8">
           <BrandLockup />
         </div>
 
-        <form onSubmit={submit} className="rounded-2xl bg-white p-5" autoComplete="on">
+        <form onSubmit={submit} className="rounded-2xl border border-ink-200 bg-white p-5" autoComplete="on">
           <h2 className="text-[17px] font-bold text-ink-900">Choose a password</h2>
           <p className="mt-1 text-[13px] leading-relaxed text-ink-600">
             {profile?.organization?.name ? (
@@ -103,7 +103,7 @@ export function SetPasswordScreen() {
         <button
           type="button"
           onClick={() => void signOut()}
-          className="mt-5 w-full text-center text-xs text-white/50 underline"
+          className="mt-5 w-full text-center text-xs text-ink-500 underline"
         >
           Not you? Sign out
         </button>

@@ -18,7 +18,12 @@ high resolution:
 | `QC2GO Brandmark.svg` | 1150 × 1006 | 2470 × 2160 |
 
 `QC2GO Tagline Update.png` is a plain 1888 × 656 PNG rather than a wrapper —
-the corrected tagline, and the source for the sign-in lockup.
+the corrected tagline, on white.
+
+`Logo with tagline no background.svg` is the same lockup **with real
+transparency**: still a raster in a wrapper, but its mask runs the full 0–255
+and 70% of the image is fully transparent. It is what `public/qc2go-lockup.png`
+is built from, and nothing has to be keyed out of it.
 
 That is why a wordmark costs 216 KB. It also means the artwork does not scale
 the way an SVG appears to promise — enlarge it far enough and it is a photograph
@@ -31,10 +36,13 @@ navy.
 
 ## What is generated from them
 
-`public/qc2go-logo.png` (the wordmark, used in the header),
-`public/qc2go-lockup.png` (the wordmark with its tagline, used on sign-in) and
-the icon set are built from `QC2GO.svg`, `QC2GO Tagline Update.png` and
-`QC2GO Brandmark.svg` by:
+`public/qc2go-lockup.png` (the wordmark with its tagline, used on sign-in) comes
+straight out of `Logo with tagline no background.svg`: pull the raster and its
+mask out of the wrapper, trim, downscale, quantise. No keying — the file is
+already transparent.
+
+`public/qc2go-logo.png` (the wordmark alone, used in the header) and the icon
+set still come from `QC2GO.svg` and `QC2GO Brandmark.svg`, which are not, by:
 
 1. pulling the RGB raster out of the wrapper,
 2. keying pure white (all channels ≥ 250) to transparent **at full
@@ -54,7 +62,6 @@ letter. Keying after would leave one, at every size.
   superseded by `QC2GO Tagline Update.png`, which is correct and is what
   `public/qc2go-lockup.png` is built from. The original is kept only so nobody
   re-exports from it by mistake.
-- **No transparent export.** Everything above exists because every supplied
-  file, the corrected one included, has a white background baked in. A PNG or
-  SVG exported with transparency would let all of this be deleted, and would be
-  better artwork besides.
+- **The wordmark and brandmark still have no transparent export.** Only the
+  tagline lockup has one, so only it skips the keying step. The same export from
+  `QC2GO.svg` and `QC2GO Brandmark.svg` would let the rest of it go too.

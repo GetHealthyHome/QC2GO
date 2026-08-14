@@ -13,18 +13,7 @@ import {
 } from '../lib/tasks';
 import { formatDate, todayIso } from '../lib/inspection';
 import type { TaskState } from '../lib/types';
-import {
-  AutoTextarea,
-  Badge,
-  Button,
-  Card,
-  EmptyState,
-  Field,
-  Screen,
-  TextInput,
-  TopBar,
-  cx,
-} from '../components/ui';
+import { AutoTextarea, Badge, Button, Card, EmptyState, Field, Screen, TextInput, TopBar, cx, topBarActionClass } from '../components/ui';
 import { AlertIcon, ChevronRightIcon, ClipboardIcon, PlusIcon, TrashIcon } from '../components/Icons';
 
 /**
@@ -78,7 +67,7 @@ export function TasksScreen() {
             type="button"
             onClick={() => setAdding((current) => !current)}
             aria-label="Add a work order"
-            className="flex size-10 items-center justify-center rounded-xl text-white/80 active:bg-white/10"
+            className={topBarActionClass}
           >
             <PlusIcon className="size-5" />
           </button>

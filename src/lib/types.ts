@@ -159,6 +159,18 @@ export interface SharedConfig {
   salespeople: string[];
   teamLeaders: string[];
   /**
+   * The categories a checklist may be filed under.
+   *
+   * Grouping is the only thing a category does, so the value has to be chosen
+   * rather than typed — "Home Performance" and "home performance" typed by two
+   * admins are two groups on the picker and one kind of job in the world.
+   *
+   * Not exhaustive, and not a rule: a checklist may already carry a category
+   * that is not on this list (the shipped ones do), and those stay selectable.
+   * See `categoryOptions`.
+   */
+  categories: string[];
+  /**
    * Whether a work order has to be verified by somebody other than the account
    * that marked it done.
    *

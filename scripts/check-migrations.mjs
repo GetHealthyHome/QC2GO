@@ -319,6 +319,23 @@ check('each company keeps its own shared config', () => {
   return seen.includes('acme') && !seen.includes('beta') ? null : `Acme sees: ${seen}`;
 });
 
+check('the category pick list starts empty and holds a list', () => {
+  // A company that has never opened Settings must read as "no list yet" rather
+  // than as null — the client maps the column straight onto an array it will
+  // iterate, and `null.map` is a blank screen rather than an empty dropdown.
+  const empty = tx(
+    ACME,
+    `select coalesce(categories::text, 'NULL') from public.shared_config;`,
+  );
+  if (empty !== '{}') return `a fresh company's categories read as ${empty}`;
+
+  psql(`
+    update public.shared_config set categories = '{home-performance,ventilation}'
+    where org_id = 'aaaaaaaa-0000-0000-0000-000000000001';`);
+  const seen = tx(ACME, `select categories::text from public.shared_config;`);
+  return seen === '{home-performance,ventilation}' ? null : `read back as ${seen}`;
+});
+
 check('a tombstone does not leak another company\'s ids', () => {
   psql(`delete from public.customers where id = 'cust-beta';`);
   const seen = tx(ACME, `select entity_id from public.tombstones;`);

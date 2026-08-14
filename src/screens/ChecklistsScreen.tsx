@@ -10,9 +10,8 @@ import { ChevronRightIcon, ClipboardIcon, PlusIcon } from '../components/Icons';
 
 export function ChecklistsScreen() {
   const navigate = useNavigate();
-  const { templates, shared, isAdmin, createTemplate } = useStore();
+  const { templates, shared, isAdmin } = useStore();
   const [showArchived, setShowArchived] = useState(false);
-  const [creating, setCreating] = useState(false);
 
   const visible = useMemo(
     () =>
@@ -23,17 +22,6 @@ export function ChecklistsScreen() {
   );
 
   const archivedCount = templates.filter((template) => template.archived).length;
-
-  async function handleCreate() {
-    if (creating) return;
-    setCreating(true);
-    try {
-      const template = await createTemplate();
-      navigate(`/checklists/${template.id}`);
-    } finally {
-      setCreating(false);
-    }
-  }
 
   return (
     <>
@@ -102,10 +90,14 @@ export function ChecklistsScreen() {
       {isAdmin ? (
         <div className="safe-pb pointer-events-none fixed inset-x-0 bottom-0 z-30 no-print">
           <div className="mx-auto w-full max-w-3xl px-3 pb-3">
+            {/*
+              Opens the form rather than creating. This used to write an
+              "Untitled checklist" the instant it was pressed, before anybody had
+              said what they wanted, and backing out left it in the library.
+            */}
             <Button
               block
-              disabled={creating}
-              onClick={() => void handleCreate()}
+              onClick={() => navigate('/checklists/new')}
               className="pointer-events-auto shadow-lg shadow-brand-600/25"
             >
               <PlusIcon className="size-5" />

@@ -2,9 +2,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useStore, useTemplate } from '../lib/store';
 import { blankSection, moveItem } from '../lib/checklist';
+import { categoryOptions } from '../templates';
 import { isYesNo } from '../lib/inspection';
 import type { Section, Template } from '../lib/types';
 import { SectionEditor } from '../components/SectionEditor';
+import { CategorySelect } from '../components/CategorySelect';
 import { Button, Card, Field, Screen, TextInput, TopBar, inputClass } from '../components/ui';
 import { PlusIcon, TrashIcon } from '../components/Icons';
 
@@ -12,7 +14,16 @@ export function ChecklistEditorScreen() {
   const { templateId } = useParams();
   const navigate = useNavigate();
   const stored = useTemplate(templateId);
-  const { isAdmin, saveTemplate, removeTemplate, duplicateTemplate, resetTemplate } = useStore();
+  const {
+    isAdmin,
+    templates,
+    shared,
+    saveShared,
+    saveTemplate,
+    removeTemplate,
+    duplicateTemplate,
+    resetTemplate,
+  } = useStore();
 
   const [draft, setDraft] = useState<Template | undefined>(stored);
   const [openSection, setOpenSection] = useState<string | null>(null);
@@ -27,6 +38,22 @@ export function ChecklistEditorScreen() {
     () => Boolean(draft && stored && JSON.stringify(draft) !== JSON.stringify(stored)),
     [draft, stored],
   );
+
+  const options = useMemo(() => categoryOptions(shared, templates), [shared, templates]);
+
+  /**
+   * Leaving with edits still in the draft asks first.
+   *
+   * Everything on this screen is a draft until *Save changes*, so the back
+   * arrow used to discard whatever had been typed without a word — and a name
+   * typed into the field that displays it looks saved whether or not it is.
+   */
+  function leave() {
+    if (dirty && !window.confirm('Leave without saving? Your changes to this checklist are lost.')) {
+      return;
+    }
+    navigate('/checklists');
+  }
 
   if (!stored || !draft) {
     return (
@@ -103,7 +130,7 @@ export function ChecklistEditorScreen() {
       <TopBar
         title={isAdmin ? 'Edit checklist' : draft.name}
         subtitle={`${draft.sections.length} sections · ${totalQuestions} checkpoints`}
-        back="/checklists"
+        onBack={leave}
       />
 
       <Screen className={dirty ? 'pb-32' : 'pb-10'}>
@@ -116,13 +143,22 @@ export function ChecklistEditorScreen() {
                 onChange={(event) => patch({ name: event.target.value })}
               />
             </Field>
-            <Field label="Category" hint="Groups checklists on the picker. Any text works.">
-              <TextInput
-                value={draft.category}
-                disabled={!isAdmin}
-                onChange={(event) => patch({ category: event.target.value })}
-              />
-            </Field>
+            <CategorySelect
+              value={draft.category}
+              options={options}
+              disabled={!isAdmin}
+              hint="Groups checklists on the picker. The list is maintained in Settings."
+              onChange={(category) => patch({ category })}
+              onAddCategory={
+                isAdmin
+                  ? (added) =>
+                      void saveShared({
+                        ...shared,
+                        categories: [...shared.categories, added].sort(),
+                      })
+                  : undefined
+              }
+            />
             <Field label="Summary" hint="One line describing when to use this checklist.">
               <textarea
                 rows={2}

@@ -110,15 +110,22 @@ await page.waitForURL(/\/customers\/cust_/);
 const customerUrl = page.url();
 await shot('03-customer-detail');
 
-// --- tick the checklists this job needs, then start one ---
+// --- tick the checklists this job needs, then start the walkthrough ---
+//
+// One button rather than one per checklist, and no visit day to pick: a
+// walkthrough happens on the day somebody is standing in the house.
+check(
+  'nothing to start until a checklist is ticked',
+  (await page.getByRole('button', { name: /Start QC Walkthrough/ }).count()) === 0,
+);
 await page.getByRole('checkbox', { name: /Mitsubishi Ductless Hyper-Heat/ }).click();
 await page.waitForTimeout(300);
 await shot('04-templates-checked');
 check(
-  'ticking a checklist reveals a start button',
-  (await page.getByRole('button', { name: /Mitsubishi Ductless Hyper-Heat/ }).count()) > 0,
+  'ticking a checklist reveals the walkthrough button',
+  (await page.getByRole('button', { name: /Start QC Walkthrough/ }).count()) > 0,
 );
-await page.getByRole('button', { name: /Mitsubishi Ductless Hyper-Heat.*Start/s }).click();
+await page.getByRole('button', { name: /Start QC Walkthrough/ }).click();
 await page.waitForURL(/\/inspections\//);
 const inspectionUrl = page.url().replace(/\?.*$/, '');
 await shot('05-job-info');
@@ -975,7 +982,9 @@ await page.goto(customerUrl, { waitUntil: 'networkidle' });
 await page.waitForTimeout(500);
 await page.getByRole('checkbox', { name: /Attic Prep Pre-Install/ }).click();
 await page.waitForTimeout(300);
-await page.getByRole('button', { name: /Attic Prep Pre-Install.*Start/s }).click();
+// Mitsubishi is already run for today, so the press acts on the one checklist
+// today has not finished with, and lands on it rather than on the older run.
+await page.getByRole('button', { name: /QC Walkthrough/ }).click();
 await page.waitForURL(/\/inspections\//);
 const atticUrl = page.url().replace(/\?.*$/, '');
 await page.waitForTimeout(400);
@@ -1100,9 +1109,21 @@ check(
 await shot('22-report-after-template-edit');
 
 // but a NEW inspection on the same job does pick it up
+//
+// Started by ticking a checklist this job has never run, rather than by
+// re-running one it has. The universal section is prepended to every checklist,
+// so any newly started one proves the point — and this way the check does not
+// also depend on what the button does about a run that is already open, which
+// is a separate question with its own tests.
 await page.goto(customerUrl, { waitUntil: 'networkidle' });
 await page.waitForTimeout(400);
-await page.getByRole('button', { name: /Mitsubishi Ductless Hyper-Heat.*Run again/s }).click();
+// The QC cards, under the customer box and outlined by their result.
+await shot('03b-qc-cards', true);
+// Matched on the part of the name no category badge repeats: "Attic Prep
+// Pre-Install" is filed under Home Performance, so its tile carries that too.
+await page.getByRole('checkbox', { name: /Insulation & Air Sealing/ }).click();
+await page.waitForTimeout(300);
+await page.getByRole('button', { name: /QC Walkthrough/ }).click();
 await page.waitForURL(/\/inspections\//);
 await page.locator('[data-active]').nth(1).click();
 await page.waitForTimeout(500);

@@ -176,10 +176,30 @@ function SerialField({
   );
 }
 
+/**
+ * The three answers, each carrying its own colour whether or not it is the one
+ * given.
+ *
+ * They used to be grey until pressed and then flood with colour. That reads
+ * well on a desk and badly on a roof: the inspector had to read three words to
+ * find the one they wanted, every time, because until it was pressed nothing
+ * about the Yes button was green. Now the mark is always a white circle ringed
+ * in its own colour — green tick, red cross, grey dash — so the control is
+ * recognised by shape and colour rather than by reading it.
+ *
+ * Which one was chosen is then carried by the tile behind it: its border takes
+ * the colour, the background takes the palest shade of it, and the label goes
+ * bold in it. That is a bigger, higher-contrast change than the old filled pill
+ * and it leaves the circle itself alone, so the three marks never move or
+ * change while an inspector's thumb is over them.
+ */
 const ANSWER_BUTTONS: Array<{
   value: Answer;
   label: string;
   Icon: typeof CheckIcon;
+  /** The circle. Constant — it says which answer this is, not whether it won. */
+  mark: string;
+  /** The tile, once this is the answer given. */
   selected: string;
   idle: string;
 }> = [
@@ -187,21 +207,24 @@ const ANSWER_BUTTONS: Array<{
     value: 'yes',
     label: 'Yes',
     Icon: CheckIcon,
-    selected: 'border-pass-600 bg-pass-500 text-white',
-    idle: 'border-ink-200 bg-white text-ink-500 active:bg-pass-50 active:border-pass-500 active:text-pass-700',
+    mark: 'border-pass-500 text-pass-600',
+    selected: 'border-pass-500 bg-pass-50 text-pass-700',
+    idle: 'border-ink-200 bg-white text-ink-500 active:bg-pass-50',
   },
   {
     value: 'no',
     label: 'No',
     Icon: XIcon,
-    selected: 'border-fail-600 bg-fail-500 text-white',
-    idle: 'border-ink-200 bg-white text-ink-500 active:bg-fail-50 active:border-fail-500 active:text-fail-700',
+    mark: 'border-fail-500 text-fail-600',
+    selected: 'border-fail-500 bg-fail-50 text-fail-700',
+    idle: 'border-ink-200 bg-white text-ink-500 active:bg-fail-50',
   },
   {
     value: 'na',
     label: 'N/A',
     Icon: MinusIcon,
-    selected: 'border-ink-600 bg-ink-600 text-white',
+    mark: 'border-ink-400 text-ink-500',
+    selected: 'border-ink-500 bg-ink-100 text-ink-700',
     idle: 'border-ink-200 bg-white text-ink-500 active:bg-ink-100',
   },
 ];
@@ -294,7 +317,7 @@ export function QuestionCard({
         </div>
 
         <div className="mt-3.5 grid grid-cols-3 gap-2">
-          {ANSWER_BUTTONS.map(({ value, label, Icon, selected, idle }) => {
+          {ANSWER_BUTTONS.map(({ value, label, Icon, mark, selected, idle }) => {
             const isSelected = response.answer === value;
             return (
               <button
@@ -309,11 +332,18 @@ export function QuestionCard({
                   })
                 }
                 className={cx(
-                  'flex min-h-13 flex-col items-center justify-center gap-0.5 rounded-xl border-2 text-[13px] font-bold transition-colors disabled:opacity-70',
+                  'flex min-h-13 flex-col items-center justify-center gap-1 rounded-xl border-2 text-[13px] font-bold transition-colors disabled:opacity-70',
                   isSelected ? selected : idle,
                 )}
               >
-                <Icon className="size-5" strokeWidth={3} />
+                <span
+                  className={cx(
+                    'flex size-6 items-center justify-center rounded-full border-2 bg-white',
+                    mark,
+                  )}
+                >
+                  <Icon className="size-3.5" strokeWidth={3.5} />
+                </span>
                 {label}
               </button>
             );

@@ -159,7 +159,7 @@ export function ChecklistEditorScreen() {
                   : undefined
               }
             />
-            <Field label="Summary" hint="One line describing when to use this checklist.">
+            <Field label="Description" hint="One line describing when to use this checklist.">
               <textarea
                 rows={2}
                 value={draft.summary}

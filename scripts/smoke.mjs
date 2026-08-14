@@ -846,13 +846,48 @@ await page.getByRole('button', { name: 'Save changes' }).click();
 await page.waitForTimeout(600);
 
 // build a brand new checklist from scratch
+//
+// "New checklist" opens a form and writes nothing until Create is pressed. It
+// used to write the record on the first press, which is what put an "Untitled
+// checklist" in the library for the next person to find — and, because the
+// editor keeps its changes in a draft, made a typed name look saved when what
+// was stored was still the placeholder.
 await page.goto(BASE + '/#/checklists', { waitUntil: 'networkidle' });
 await page.getByRole('button', { name: 'New checklist' }).click();
+await page.waitForURL(/checklists\/new/);
+
+// THE REGRESSION: abandoning the form leaves the library exactly as it was.
+await page.getByLabel('Checklist name').fill('Abandoned Draft');
+await withDialogs([true], async () => {
+  await page.getByRole('button', { name: 'Cancel' }).click();
+});
+await page.waitForTimeout(400);
+check(
+  'abandoning the new-checklist form writes nothing',
+  (await page.getByText('Abandoned Draft').count()) === 0 &&
+    (await page.getByText('Untitled checklist').count()) === 0,
+);
+
+await page.getByRole('button', { name: 'New checklist' }).click();
+await page.waitForURL(/checklists\/new/);
+await page.getByLabel('Checklist name').fill('Attic Prep Pre-Install');
+// A choice now, not typed text: two spellings of one category are two groups
+// on the picker and one kind of work.
+await page.getByLabel('Category').selectOption('home-performance');
+await page.getByLabel('Description').fill('Walked before the crew starts insulation.');
+check(
+  'no checkpoint suggestions on the new-checklist form where there is no backend',
+  (await page.getByRole('button', { name: 'Suggest checkpoints' }).count()) === 0,
+);
+await shot('20-new-checklist');
+await page.getByRole('button', { name: 'Create checklist' }).click();
 await page.waitForURL(/checklists\/tpl_/);
 const atticEditorUrl = page.url();
-await page.getByLabel('Checklist name').fill('Attic Prep Pre-Install');
-await page.getByLabel('Category').fill('home-performance');
-await page.getByLabel('Summary').fill('Walked before the crew starts insulation.');
+check(
+  'the checklist was created with what was typed, not a placeholder',
+  (await page.getByLabel('Checklist name').inputValue()) === 'Attic Prep Pre-Install' &&
+    (await page.getByLabel('Category').inputValue()) === 'home-performance',
+);
 await page.getByRole('button', { name: 'Add section' }).click();
 await page.waitForTimeout(300);
 await page.getByLabel('Section title').fill('Access & Safety');
@@ -865,7 +900,7 @@ check(
   'no checkpoint suggestions where there is no backend to ask',
   (await page.getByRole('button', { name: 'Suggest checkpoints' }).count()) === 0,
 );
-await shot('20-new-checklist');
+await shot('20b-new-section');
 await page.getByRole('button', { name: 'Save changes' }).click();
 await page.waitForTimeout(600);
 

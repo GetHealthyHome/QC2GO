@@ -60,13 +60,13 @@ export function SharedReportScreen() {
 
   if (needsPasscode) {
     return (
-      <div className="safe-pt safe-pb flex min-h-screen flex-col justify-center bg-ink-900 px-5 py-10">
+      <div className="safe-pt safe-pb flex min-h-screen flex-col justify-center bg-white px-5 py-10">
         <form
           onSubmit={(event) => {
             event.preventDefault();
             void load(passcode);
           }}
-          className="mx-auto w-full max-w-sm rounded-2xl bg-white p-5"
+          className="mx-auto w-full max-w-sm rounded-2xl border border-ink-200 bg-white p-5"
         >
           <h1 className="text-[17px] font-bold text-ink-900">This report needs a passcode</h1>
           <p className="mt-1 text-[13px] text-ink-600">

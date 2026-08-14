@@ -1,60 +1,58 @@
 # Brand source artwork
 
 The files supplied by the company, kept here rather than in `public/` because
-they are **source**, not assets: nothing links to them and serving half a
-megabyte nobody fetches is worse than keeping it out of the build. The files the
-app actually uses are generated from these and live in `public/`.
+they are **source**, not assets: nothing links to them and serving three-quarters
+of a megabyte nobody fetches is worse than keeping it out of the build. The files
+the app actually uses are generated from these and live in `public/`.
 
-## What these files actually are
+## What the app uses, and what it is built from
 
-They are named `.svg` and they are not vector art. Each one is an SVG wrapper
-around **two embedded PNGs** — an RGB image and a greyscale alpha mask — at very
-high resolution:
+| Generated | Used by | Built from |
+| --- | --- | --- |
+| `public/qc2go-lockup.png` | The sign-in, set-password and no-company screens | `Logo with tagline no background.svg` |
+| `public/qc2go-logo.png` | The header, once signed in | `qc2go transparent.png` |
+| `public/favicon-32.png`, `apple-touch-icon.png`, `icon-192.png`, `icon-512.png` | The browser tab, the home-screen icon, the PWA manifest | `Favicon or brandmark.svg` |
+
+All three sources have **real transparency** — masks running the full 0–255,
+around 70% of each image fully clear, every corner at alpha 0. Generating an
+asset is now: pull the raster (and its mask, where the file is a wrapper), trim
+the clear margin, downscale with Lanczos, quantise to 64 colours. The last step
+matters more than it sounds: the artwork is four flat colours, and quantising
+takes the wordmark from 60 KB to under 10 KB.
+
+## These `.svg` files are not vector art
+
+Each one is an SVG wrapper around **two embedded PNGs** — an RGB image and a
+greyscale mask — at high resolution:
 
 | File | Wrapper viewBox | Embedded raster |
 | --- | --- | --- |
+| `Favicon or brandmark.svg` | 1150 × 1006 | 1534 × 1342 |
+| `Logo with tagline no background.svg` | 1416 × 492 | 1888 × 656 |
 | `QC2GO.svg` | 770 × 257 | 3840 × 1282 |
 | `QC2GO Tagline.svg` | 838 × 278 | 3840 × 1276 |
 | `QC2GO Brandmark.svg` | 1150 × 1006 | 2470 × 2160 |
 
-`QC2GO Tagline Update.png` is a plain 1888 × 656 PNG rather than a wrapper —
-the corrected tagline, and the source for the sign-in lockup.
+So a wordmark costs 216 KB, and the artwork does not scale the way an `.svg`
+extension appears to promise — enlarge it far enough and it is a photograph of a
+logo. Everything generated from them is a PNG, which is the honest form of it.
 
-That is why a wordmark costs 216 KB. It also means the artwork does not scale
-the way an SVG appears to promise — enlarge it far enough and it is a photograph
-of a logo.
+## The superseded originals
 
-**The mask is not a cut-out.** Its alpha never falls below 64 and no pixel is
-fully transparent, so the white behind the letters is part of the image. Placed
-on the sign-in screen as supplied, the logo arrives as a white rectangle on
-navy.
+`QC2GO.svg`, `QC2GO Brandmark.svg`, `QC2GO Tagline.svg` and
+`QC2GO Tagline Update.png` are the first round, and **all four have a white
+background baked in** — alpha never falling below 64, every corner white. Dropped
+onto a screen as supplied, each arrives as a white rectangle.
 
-## What is generated from them
+They were usable, by keying pure white to transparent at full resolution and
+only then downscaling, so the resample rebuilt the anti-aliased edge against
+transparency rather than against the white behind it. That code is gone now that
+every asset has a transparent source. It is recorded here because the reasoning
+is not obvious and would otherwise have to be rediscovered: keying *after* a
+downscale leaves a light fringe around every letter, at every size.
 
-`public/qc2go-logo.png` (the wordmark, used in the header),
-`public/qc2go-lockup.png` (the wordmark with its tagline, used on sign-in) and
-the icon set are built from `QC2GO.svg`, `QC2GO Tagline Update.png` and
-`QC2GO Brandmark.svg` by:
+Two reasons they are kept rather than deleted:
 
-1. pulling the RGB raster out of the wrapper,
-2. keying pure white (all channels ≥ 250) to transparent **at full
-   resolution** — the grey "2" is `#bfbfbf` and nowhere near that threshold, so
-   it survives untouched,
-3. downscaling with Lanczos, which rebuilds the anti-aliased edge against
-   transparency rather than against the white that was there before, and
-4. quantising to a 64-colour palette, which takes the wordmark from 60 KB to
-   under 10 KB because the artwork is four flat colours.
-
-Doing the key *before* the downscale is what avoids a light fringe around every
-letter. Keying after would leave one, at every size.
-
-## Two things to fix at source
-
-- **`QC2GO Tagline.svg` has a typo** — it reads **QUIALITY IN MOTION**. It is
-  superseded by `QC2GO Tagline Update.png`, which is correct and is what
-  `public/qc2go-lockup.png` is built from. The original is kept only so nobody
-  re-exports from it by mistake.
-- **No transparent export.** Everything above exists because every supplied
-  file, the corrected one included, has a white background baked in. A PNG or
-  SVG exported with transparency would let all of this be deleted, and would be
-  better artwork besides.
+- **`QC2GO Tagline.svg` has a typo** — it reads **QUIALITY IN MOTION**. Keeping
+  it named and explained is the surest way nobody re-exports from it by mistake.
+- They are the only copies at 3840 px. Nothing needs that today.

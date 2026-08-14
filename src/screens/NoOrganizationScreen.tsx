@@ -15,13 +15,13 @@ export function NoOrganizationScreen() {
   const { profile, signOut } = useAuth();
 
   return (
-    <div className="safe-pt safe-pb flex min-h-screen flex-col justify-center bg-ink-900 px-5 py-10">
+    <div className="safe-pt safe-pb flex min-h-screen flex-col justify-center bg-white px-5 py-10">
       <div className="mx-auto w-full max-w-sm">
         <div className="mb-8">
           <BrandLockup />
         </div>
 
-        <div className="rounded-2xl bg-white p-5">
+        <div className="rounded-2xl border border-ink-200 bg-white p-5">
           <p className="flex items-start gap-1.5 rounded-xl bg-warn-50 px-3 py-2.5 text-[13px] font-medium text-warn-700">
             <AlertIcon className="mt-0.5 size-4 shrink-0" />
             <span>This account is not part of a company yet.</span>

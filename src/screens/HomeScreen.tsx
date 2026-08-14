@@ -5,16 +5,7 @@ import { resolveChecklist } from '../lib/checklist';
 import { overallProgress, relativeTime } from '../lib/inspection';
 import { capturePosition, customersNear, formatDistance } from '../lib/geo';
 import type { Customer } from '../lib/types';
-import {
-  Badge,
-  Button,
-  Card,
-  EmptyState,
-  Screen,
-  TopBar,
-  cx,
-  inputClass,
-} from '../components/ui';
+import { Badge, Button, Card, EmptyState, Screen, TopBar, cx, inputClass, topBarActionClass } from '../components/ui';
 import {
   AlertIcon,
   ChevronRightIcon,
@@ -139,7 +130,7 @@ export function HomeScreen() {
           <Link
             to="/settings"
             aria-label="Settings"
-            className="flex size-10 items-center justify-center rounded-xl text-white/80 active:bg-white/10"
+            className={topBarActionClass}
           >
             <SettingsIcon className="size-5" />
           </Link>

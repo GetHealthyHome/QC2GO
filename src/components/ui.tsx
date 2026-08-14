@@ -237,6 +237,17 @@ export function AutoTextarea({
   );
 }
 
+/**
+ * The tap target for an icon sitting in the TopBar — its back arrow, and
+ * whatever a screen puts in `actions`.
+ *
+ * Exported because five screens draw their own, and when the bar went from dark
+ * to white every one of them would otherwise have kept a white icon on a white
+ * bar. One class is the only way that stays true the next time it changes.
+ */
+export const topBarActionClass =
+  'flex size-10 items-center justify-center rounded-xl text-ink-500 active:bg-ink-100';
+
 export function TopBar({
   title,
   subtitle,
@@ -280,13 +291,15 @@ export function TopBar({
       <path d="m15 18-6-6 6-6" />
     </svg>
   );
-  const backClass =
-    '-ml-1 flex size-10 shrink-0 items-center justify-center rounded-xl text-white/80 active:bg-white/10';
+  const backClass = cx('-ml-1 shrink-0', topBarActionClass);
 
   return (
     <header
       className={cx(
-        'safe-pt border-b border-ink-800/40 bg-ink-900 text-white no-print',
+        // White, with a hairline to hold it off the page rather than a block of
+        // colour. The logo and the icons carry the brand here; a dark bar was
+        // doing that job by being the loudest thing on every screen.
+        'safe-pt border-b border-ink-200 bg-white text-ink-900 no-print',
         sticky && 'sticky top-0 z-30',
       )}
     >
@@ -314,7 +327,7 @@ export function TopBar({
           ) : (
             <h1 className="truncate text-[17px] leading-tight font-semibold">{title}</h1>
           )}
-          {subtitle ? <p className="truncate text-xs text-white/60">{subtitle}</p> : null}
+          {subtitle ? <p className="truncate text-xs text-ink-500">{subtitle}</p> : null}
         </div>
         {actions ? <div className="flex shrink-0 items-center gap-1">{actions}</div> : null}
       </div>

@@ -23,7 +23,7 @@ export default defineConfig({
         short_name: 'QC2GO',
         description:
           'Quality in motion. Mobile quality control checklists for home performance, indoor air quality, and heat pump installations.',
-        theme_color: '#1b5c7e',
+        theme_color: '#156082',
         background_color: '#f8fafc',
         display: 'standalone',
         orientation: 'portrait',

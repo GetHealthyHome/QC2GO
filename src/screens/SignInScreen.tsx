@@ -22,7 +22,7 @@ export function SignInScreen() {
   }
 
   return (
-    <div className="safe-pt safe-pb flex min-h-screen flex-col justify-center bg-ink-900 px-5 py-10">
+    <div className="safe-pt safe-pb flex min-h-screen flex-col justify-center bg-white px-5 py-10">
       <div className="mx-auto w-full max-w-sm">
         <div className="mb-8">
           <BrandLockup />
@@ -30,7 +30,7 @@ export function SignInScreen() {
 
         <form
           onSubmit={submit}
-          className="rounded-2xl bg-white p-5"
+          className="rounded-2xl border border-ink-200 bg-white p-5"
           // Let password managers recognise this as a sign-in form.
           autoComplete="on"
         >
@@ -73,7 +73,7 @@ export function SignInScreen() {
           </div>
         </form>
 
-        <p className="mt-5 text-center text-xs leading-relaxed text-white/50">
+        <p className="mt-5 text-center text-xs leading-relaxed text-ink-500">
           Accounts are created by an administrator. If you cannot get in, ask them to check
           your account rather than signing up again.
         </p>

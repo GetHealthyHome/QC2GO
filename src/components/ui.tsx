@@ -46,6 +46,26 @@ export function Button({
   );
 }
 
+/**
+ * The white box everything sits in — unless the caller says otherwise.
+ *
+ * The base classes are dropped when the caller names their own, and that is not
+ * a nicety. Two utilities from the same family on one element do not resolve by
+ * the order they appear in the class attribute; the cascade decides, and
+ * Tailwind emits `.bg-white` *after* every tinted `.bg-*`. So
+ * `<Card className="bg-warn-50">` lost to this component's own base and rendered
+ * plain white — silently, in nine places across seven screens, every one of
+ * them a callout that was meant to be coloured because it was worth noticing.
+ *
+ * Matching on the class string is blunt, and it is the only thing available
+ * here short of a class-merging dependency. It is narrow on purpose: a
+ * background of any kind counts, and a border *colour* counts while a border
+ * *width* does not, so `border-2` still gets the default ink border it expects.
+ */
+function names(className: string | undefined, pattern: RegExp): boolean {
+  return className ? pattern.test(className) : false;
+}
+
 export function Card({
   children,
   className,
@@ -55,8 +75,19 @@ export function Card({
   className?: string;
   as?: 'div' | 'section' | 'li';
 }) {
+  const ownBackground = names(className, /(^|\s)bg-/);
+  const ownBorderColour = names(className, /(^|\s)border-[a-z]+-\d/);
   return (
-    <As className={cx('rounded-2xl border border-ink-200 bg-white', className)}>{children}</As>
+    <As
+      className={cx(
+        'rounded-2xl border',
+        ownBorderColour ? undefined : 'border-ink-200',
+        ownBackground ? undefined : 'bg-white',
+        className,
+      )}
+    >
+      {children}
+    </As>
   );
 }
 

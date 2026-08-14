@@ -164,10 +164,16 @@ const escape = (value) => {
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 };
 
+// The same columns the app's own export and upload use — see
+// src/lib/checklistCsv.ts. Kept identical on purpose: this file and that one
+// describe one format, and a doc in a different shape to the thing an admin can
+// actually upload is worse than no doc.
 const rows = [
   [
     'checklist',
     'checklist_id',
+    'category',
+    'checklist_description',
     'section',
     'section_id',
     'checkpoint_id',
@@ -180,12 +186,14 @@ const rows = [
   ],
 ];
 
-function addRows(checklistName, checklistId, sections) {
+function addRows(checklistName, checklistId, category, description, sections) {
   for (const section of sections) {
     for (const question of section.questions) {
       rows.push([
         checklistName,
         checklistId,
+        category,
+        description,
         section.title,
         section.id,
         question.id,
@@ -201,9 +209,21 @@ function addRows(checklistName, checklistId, sections) {
 }
 
 // The universal block is listed once on its own rather than repeated per checklist.
-addRows('(shared) Universal QC Standards', 'shared', [universal]);
+addRows(
+  '(shared) Universal QC Standards',
+  'shared',
+  '',
+  'Asked on every checklist. Edited under Checklists -> Job Information & Universal QC Standards.',
+  [universal],
+);
 for (const template of BUILT_IN_TEMPLATES) {
-  addRows(template.name, template.id, template.sections);
+  addRows(
+    template.name,
+    template.id,
+    template.category ?? '',
+    template.summary ?? '',
+    template.sections,
+  );
 }
 
 fs.writeFileSync(

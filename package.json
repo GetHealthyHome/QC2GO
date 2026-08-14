@@ -29,6 +29,7 @@
     "check:tasks": "node scripts/check-tasks.mjs",
     "check:scribe": "node scripts/check-scribe.mjs",
     "check:checkpoints": "node scripts/check-checkpoints.mjs",
+    "check:checklist-csv": "node scripts/check-checklist-csv.mjs",
     "check:model-reply": "node scripts/check-model-reply.mjs",
     "check:cors": "node scripts/check-cors.mjs",
     "check:functions-parse": "node scripts/check-functions-parse.mjs"

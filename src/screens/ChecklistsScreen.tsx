@@ -76,6 +76,21 @@ export function ChecklistsScreen() {
           </ul>
         )}
 
+        {isAdmin ? (
+          <Card className="mt-3 active:bg-ink-50">
+            <Link to="/checklists/import" className="flex items-center gap-3 p-4">
+              <ClipboardIcon className="size-5 shrink-0 text-ink-300" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[15px] font-semibold text-ink-900">Import &amp; export</p>
+                <p className="text-xs text-ink-500">
+                  Every question as a spreadsheet · upload to change a lot at once
+                </p>
+              </div>
+              <ChevronRightIcon className="size-5 shrink-0 text-ink-300" />
+            </Link>
+          </Card>
+        ) : null}
+
         {archivedCount > 0 ? (
           <button
             type="button"

@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useChecklist, useCustomer, useInspection, useStore } from '../lib/store';
 import {
   VISIT_TYPE_LABELS,
+  deficiencies,
   formatDate,
   formatDateTime,
   expandSections,
@@ -50,6 +51,7 @@ export function ReportScreen() {
 
   const progress = overallProgress(inspection, sections);
   const skipped = skippedBlocks(inspection, sections);
+  const failures = deficiencies(inspection, sections);
   const completed = inspection.status === 'completed';
 
   function exportJson() {
@@ -181,6 +183,51 @@ export function ReportScreen() {
               : `Last updated ${formatDateTime(inspection.updatedAt)}`}
           </p>
         </Card>
+
+        {/*
+          Everything that failed, gathered in one place and put first.
+          The sections below already carry each failure beside the checkpoint it
+          belongs to, which is the right place to read it in context and the
+          wrong place to find it: on a sixty-checkpoint checklist the three
+          things somebody has to go and fix are three red marks scattered down
+          six screens of green ones. This is that list, and nothing more —
+          drawn from the same responses, so it cannot disagree with them.
+        */}
+        {failures.length > 0 ? (
+          <ReportSection
+            title="Deficiencies"
+            meta={
+              <Badge tone="fail">
+                <AlertIcon className="size-3" />
+                {failures.length} to address
+              </Badge>
+            }
+          >
+            <ul className="flex flex-col divide-y divide-ink-100">
+              {failures.map((item) => (
+                <li key={item.stepKey + item.question.id} className="py-2.5 break-inside-avoid">
+                  <div className="flex items-baseline gap-2">
+                    <XIcon className="size-3.5 shrink-0 translate-y-0.5 text-fail-600" strokeWidth={3} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[14px] leading-snug font-semibold text-ink-900">
+                        {item.question.text}
+                      </p>
+                      <p className="mt-0.5 text-[12px] text-ink-500">{item.sectionTitle}</p>
+                      {item.response.note?.trim() ? (
+                        <p className="mt-1 text-[13px] leading-snug whitespace-pre-wrap text-ink-700">
+                          {item.response.note.trim()}
+                        </p>
+                      ) : (
+                        <p className="mt-1 text-[13px] text-warn-700">No explanation recorded.</p>
+                      )}
+                    </div>
+                    {item.question.critical ? <Badge tone="fail">Critical</Badge> : null}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </ReportSection>
+        ) : null}
 
         <ReportSection title="Job Information">
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5">

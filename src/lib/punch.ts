@@ -21,7 +21,13 @@ import type {
   Template,
 } from './types';
 import { punchKey } from './types';
-import { expandSections, getResponse, isDeficiencyDocumented, responseKey } from './inspection';
+import {
+  expandSections,
+  getResponse,
+  isDeficiencyDocumented,
+  isScored,
+  responseKey,
+} from './inspection';
 import { resolveChecklist } from './checklist';
 
 export interface PunchItem {
@@ -72,6 +78,12 @@ export function punchListFor(
 
     for (const rendered of expandSections(inspection, checklist.sections)) {
       for (const question of rendered.section.questions) {
+        // "No gas appliance on site" is an answer, not a punch item — the same
+        // rule `deficiencies()` applies, and it was missing here. An
+        // informational checkpoint answered No is a fact about the job, and
+        // listing it as something to correct puts work on the list that nobody
+        // can ever close.
+        if (!isScored(question)) continue;
         const response = getResponse(inspection, question.id, rendered.instanceId);
         if (response.answer !== 'no') continue;
 

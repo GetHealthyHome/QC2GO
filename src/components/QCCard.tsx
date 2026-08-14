@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { Inspection } from '../lib/types';
 import { formatDate, overallProgress, scoreBand, scoreOf } from '../lib/inspection';
+import { punchListFor } from '../lib/punch';
 import { resolveChecklist } from '../lib/checklist';
 import { useStore } from '../lib/store';
 import { Badge, Card, ProgressBar, cx } from './ui';
@@ -33,7 +34,7 @@ const BAND_STYLES = {
  * a 97% with a failed CO alarm check is not a pass.
  */
 export function QCCard({ inspection }: { inspection: Inspection }) {
-  const { templates, shared } = useStore();
+  const { templates, shared, customers } = useStore();
   const checklist = resolveChecklist(inspection, templates, shared);
   const sections = checklist?.sections ?? [];
   const done = inspection.status === 'completed';
@@ -70,6 +71,19 @@ export function QCCard({ inspection }: { inspection: Inspection }) {
   const band = scoreBand(score);
   const style = BAND_STYLES[band];
 
+  /**
+   * How many of this run's failures are still somebody's job.
+   *
+   * Read through the punch list rather than counted off the score, because the
+   * two answer different questions. `score.failed` is what this checklist found
+   * on the day and never changes — it is the record. This is what is left, and
+   * it drops as items are corrected from the punch list. A card that kept
+   * saying "3 failed" a fortnight after all three were fixed would send
+   * somebody back to a job that is finished.
+   */
+  const customer = customers.find((candidate) => candidate.id === inspection.customerId);
+  const punch = punchListFor(customer, [inspection], templates, shared);
+
   return (
     <Card className={cx('active:bg-ink-50', style.ring)}>
       <Link to={`/inspections/${inspection.id}/report`} className="flex items-center gap-3 p-3.5">
@@ -88,10 +102,21 @@ export function QCCard({ inspection }: { inspection: Inspection }) {
           <p className="text-xs text-ink-500">
             {formatDate(inspection.visitDate)} · {score.passed} passed, {score.failed} failed
           </p>
-          {score.criticalFailures > 0 ? (
-            <Badge tone="fail" className="mt-1">
-              <AlertIcon className="size-3" />
-              {score.criticalFailures} critical
+          {punch.open.length > 0 ? (
+            <div className="mt-1 flex flex-wrap items-center gap-1">
+              <Badge tone="fail">
+                <AlertIcon className="size-3" />
+                {punch.open.length} to address
+              </Badge>
+              {punch.criticalOpen > 0 ? (
+                <Badge tone="fail">{punch.criticalOpen} critical</Badge>
+              ) : null}
+            </div>
+          ) : score.failed > 0 ? (
+            // Said rather than left blank. A card with failures on it and no
+            // badge reads as one nobody has looked at yet.
+            <Badge tone="pass" className="mt-1">
+              All {score.failed} corrected
             </Badge>
           ) : null}
         </div>

@@ -512,6 +512,17 @@ check(
 // have exactly one open item — reachable without opening the inspection it
 // came from, which is the entire point of the screen.
 console.log('--- punch list ---');
+
+// The QC card counts what is still somebody's job, not what the day found.
+// Right now that is the one failure nobody has corrected yet.
+await page.goto(customerUrl, { waitUntil: 'networkidle' });
+await page.waitForTimeout(500);
+check(
+  'the QC card shows the failures still to address',
+  (await page.getByText('1 to address').count()) > 0,
+);
+await shot('03c-qc-card-open');
+
 await page.goto(customerUrl + '/punch', { waitUntil: 'networkidle' });
 await page.waitForTimeout(600);
 const punchText = await page.locator('body').innerText();
@@ -608,6 +619,16 @@ check(
   'closing a punch item left the signed inspection alone',
   stillSigned?.status === 'completed' && stillFailing === 1,
   JSON.stringify({ status: stillSigned?.status, failing: stillFailing }),
+);
+
+// ...and the card follows it down. The record still says one failed; what is
+// left to do is now nothing, and those are different numbers on purpose.
+await page.goto(customerUrl, { waitUntil: 'networkidle' });
+await page.waitForTimeout(500);
+const cardAfter = await page.locator('body').innerText();
+check(
+  'the QC card stops asking for a corrected failure',
+  cardAfter.includes('All 1 corrected') && !cardAfter.includes('1 to address'),
 );
 
 // --- the office export ---
@@ -771,6 +792,13 @@ check(
   'the words on the page are the report',
   pdfText.includes('Dana Whitfield') && pdfText.includes('SIGNATURES'),
   'the customer name or the signature block is missing',
+);
+// The failures gathered into one list, on the file a customer actually
+// receives — not only on the screen an inspector is looking at.
+check(
+  'the PDF compiles the failures into one list',
+  pdfText.includes('DEFICIENCIES') && pdfText.includes('Permits pulled'),
+  'the deficiency summary is missing from the PDF',
 );
 await shot('15e-pdf');
 

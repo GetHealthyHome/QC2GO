@@ -150,6 +150,13 @@ jobs:
       - name: Check the preflight allows what the client sends
         run: npm run check:cors
 
+      # Nothing else reads an edge function's index.ts. typecheck covers src/,
+      # and the function suites import the rule modules beside each function
+      # rather than the entrypoint. A syntax error in one merges green and is
+      # first noticed by a deploy rejecting the bundle.
+      - name: Check the edge functions parse
+        run: npm run check:functions-parse
+
       - name: Build
         run: npm run build
 

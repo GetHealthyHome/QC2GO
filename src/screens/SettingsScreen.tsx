@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { useAuth } from '../lib/auth';
+import { categoryLabel } from '../templates';
 import { retryRejected, runSync, type SyncStatus } from '../lib/sync';
 import type { Role } from '../lib/types';
 import { Badge, Button, Card, Field, Screen, TextInput, TopBar, cx } from '../components/ui';
@@ -298,6 +299,23 @@ export function SettingsScreen() {
           </Link>
         </Card>
 
+        {isAdmin ? (
+          <>
+            <p className="mt-3 mb-2.5 px-1 text-[13px] text-ink-500">
+              Categories group the checklists on the picker. A checklist already filed under
+              something not on this list keeps it — removing one here does not refile anything.
+            </p>
+            <NameList
+              label="Checklist categories"
+              names={shared.categories}
+              placeholder="Add a category"
+              empty="None yet — the shipped checklists still offer their own."
+              format={categoryLabel}
+              onChange={(categories) => void saveShared({ ...shared, categories })}
+            />
+          </>
+        ) : null}
+
         <h2 className="mt-8 mb-2.5 px-1 text-[13px] font-bold tracking-wide text-ink-500 uppercase">
           On this device
         </h2>
@@ -530,10 +548,17 @@ function describeSync(sync: SyncStatus): {
 function NameList({
   label,
   names,
+  placeholder = 'Add a name',
+  empty = 'None yet — until one is added, this field stays free text on the customer form.',
+  format = (name: string) => name,
   onChange,
 }: {
   label: string;
   names: string[];
+  placeholder?: string;
+  empty?: string;
+  /** How a stored value reads. Categories are stored as slugs and shown as labels. */
+  format?: (name: string) => string;
   onChange: (names: string[]) => void;
 }) {
   const [draft, setDraft] = useState('');
@@ -552,9 +577,7 @@ function NameList({
     <Card className="p-4">
       <p className="text-[13px] font-semibold text-ink-700">{label}</p>
       {names.length === 0 ? (
-        <p className="mt-1 text-xs text-ink-500">
-          None yet — until one is added, this field stays free text on the customer form.
-        </p>
+        <p className="mt-1 text-xs text-ink-500">{empty}</p>
       ) : (
         <ul className="mt-2 flex flex-col gap-1.5">
           {names.map((name) => (
@@ -562,10 +585,10 @@ function NameList({
               key={name}
               className="flex items-center gap-2 rounded-xl bg-ink-50 px-3 py-2 text-[14px] text-ink-800"
             >
-              <span className="min-w-0 flex-1 truncate">{name}</span>
+              <span className="min-w-0 flex-1 truncate">{format(name)}</span>
               <button
                 type="button"
-                aria-label={`Remove ${name}`}
+                aria-label={`Remove ${format(name)}`}
                 onClick={() => onChange(names.filter((candidate) => candidate !== name))}
                 className="flex size-8 shrink-0 items-center justify-center rounded-lg text-fail-600 active:bg-fail-50"
               >
@@ -578,7 +601,7 @@ function NameList({
       <div className="mt-2.5 flex gap-2">
         <TextInput
           value={draft}
-          placeholder="Add a name"
+          placeholder={placeholder}
           onChange={(event) => setDraft(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {

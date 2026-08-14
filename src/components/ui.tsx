@@ -210,6 +210,7 @@ export function TopBar({
   title,
   subtitle,
   back,
+  onBack,
   actions,
   /** Off when the caller pins the bar itself, e.g. stacked above a progress header. */
   sticky = true,
@@ -217,9 +218,33 @@ export function TopBar({
   title: string;
   subtitle?: string;
   back?: string;
+  /**
+   * Handle the back arrow instead of following `back` straight away.
+   *
+   * For a screen holding something unsaved. The arrow is the way people leave,
+   * so a screen that guards its Cancel button and not this one does not guard
+   * anything — it just hides the loss behind the less obvious exit.
+   */
+  onBack?: () => void;
   actions?: ReactNode;
   sticky?: boolean;
 }) {
+  const arrow = (
+    <svg
+      viewBox="0 0 24 24"
+      className="size-6"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="m15 18-6-6 6-6" />
+    </svg>
+  );
+  const backClass =
+    '-ml-1 flex size-10 shrink-0 items-center justify-center rounded-xl text-white/80 active:bg-white/10';
+
   return (
     <header
       className={cx(
@@ -228,23 +253,13 @@ export function TopBar({
       )}
     >
       <div className="mx-auto flex w-full max-w-3xl items-center gap-2 px-3 py-3">
-        {back ? (
-          <Link
-            to={back}
-            aria-label="Back"
-            className="-ml-1 flex size-10 shrink-0 items-center justify-center rounded-xl text-white/80 active:bg-white/10"
-          >
-            <svg
-              viewBox="0 0 24 24"
-              className="size-6"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="m15 18-6-6 6-6" />
-            </svg>
+        {onBack ? (
+          <button type="button" aria-label="Back" onClick={onBack} className={backClass}>
+            {arrow}
+          </button>
+        ) : back ? (
+          <Link to={back} aria-label="Back" className={backClass}>
+            {arrow}
           </Link>
         ) : null}
         <div className="min-w-0 flex-1">

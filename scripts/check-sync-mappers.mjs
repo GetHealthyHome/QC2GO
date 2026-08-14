@@ -291,6 +291,7 @@ const shared = {
   universalSection: { id: 'universal', title: 'Universal QC Standards', questions: [{ id: 'u1', text: 'Scope matches' }] },
   salespeople: ['Dana Reyes', 'Sam Okafor'],
   teamLeaders: ['Chris Lin'],
+  categories: ['home-performance', 'ventilation'],
   // Never set, and it must round-trip to exactly that rather than to `false`.
   requireSecondVerifier: undefined,
   updatedAt: '2026-08-01T00:00:00.000Z',

@@ -42,7 +42,7 @@ import type {
 } from './types';
 import { hasAdminRights } from './types';
 import { applyMove, canMove, resolutionFor, type MoveDecision } from './tasks';
-import { BUILT_IN_TEMPLATES, defaultSharedConfig } from '../templates';
+import { BUILT_IN_TEMPLATES, defaultSharedConfig, normalizeShared } from '../templates';
 import { resolveChecklist, snapshotOf } from './checklist';
 import { todayIso } from './inspection';
 import { useAuth } from './auth';
@@ -199,7 +199,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           }));
           await Promise.all(seededTemplates.map((template) => templatesRepo.put(template)));
         }
-        let seededShared = loadedShared;
+        let seededShared = loadedShared ? normalizeShared(loadedShared) : undefined;
         if (!seededShared) {
           seededShared = defaultSharedConfig();
           await sharedRepo.put(seededShared);
@@ -260,7 +260,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setInspections(nextInspections);
       setTemplates(nextTemplates);
       setTasks(nextTasks);
-      if (nextShared) setShared(nextShared);
+      if (nextShared) setShared(normalizeShared(nextShared));
     });
     return () => {
       cancelled = true;

@@ -67,7 +67,10 @@ const COLORS = {
   ink200: hex('#dbe1e8'),
   ink100: hex('#eceff3'),
   ink50: hex('#f6f8fa'),
-  brand600: hex('#1b5c7e'),
+  // The brand blue, matching --color-brand-600 in index.css. The report a
+  // customer receives is the one place the colour has to be right on paper as
+  // well as on screen, so this is the palette's own #156082 rather than near it.
+  brand600: hex('#156082'),
   pass500: hex('#12b76a'),
   pass700: hex('#027a48'),
   fail500: hex('#f04438'),

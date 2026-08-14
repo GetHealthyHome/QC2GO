@@ -16,10 +16,10 @@ export function Brandmark({ className, title }: { className?: string; title?: st
       aria-hidden={title ? undefined : true}
     >
       <g fill="none" strokeWidth="19" strokeLinecap="butt">
-        <path d="M48 15 A 31 31 0 0 0 48 77" stroke="#E4632A" />
-        <path d="M48 15 A 31 31 0 0 1 67.9 69.7" stroke="#1B5C7E" />
+        <path d="M48 15 A 31 31 0 0 0 48 77" stroke="#E97132" />
+        <path d="M48 15 A 31 31 0 0 1 67.9 69.7" stroke="#156082" />
       </g>
-      <circle cx="79" cy="79" r="11.5" fill="#E4632A" />
+      <circle cx="79" cy="79" r="11.5" fill="#E97132" />
     </svg>
   );
 }

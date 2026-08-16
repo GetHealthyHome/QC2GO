@@ -22,6 +22,7 @@
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { decideSweep, type StorageObject } from './sweep.ts';
+import { refuseUnlessCron } from '../_shared/cron.ts';
 
 const BUCKET = 'inspection-photos';
 const PAGE = 1000;
@@ -71,6 +72,11 @@ async function listAll(client: Client, prefix = '', depth = 0): Promise<StorageO
 
 Deno.serve(async (request: Request) => {
   if (request.method !== 'POST') return json({ error: 'Use POST.' }, 405);
+
+  // Only the scheduler may run this. It deletes evidence, and "any valid JWT"
+  // includes the public anon key.
+  const refused = refuseUnlessCron(request);
+  if (refused) return refused;
 
   let body: { dryRun?: unknown } = {};
   try {

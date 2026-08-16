@@ -60,6 +60,12 @@ jobs:
       - name: Check the webhook retry schedule
         run: npm run check:webhooks
 
+      # A webhook URL is attacker-controlled and fetched with the service key
+      # inside the runtime's network. This asserts the metadata endpoint,
+      # loopback and private ranges are refused before a request is made.
+      - name: Check the webhook SSRF guard
+        run: npm run check:webhook-ssrf
+
       # A file the office opens once a month is exactly the kind of thing that
       # breaks silently — a comma in an address, a quote in a name, or a value
       # Excel decides is a formula and runs.

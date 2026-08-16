@@ -60,11 +60,6 @@ export function stateIndex(state: TaskState): number {
   return TASK_STATES.indexOf(state);
 }
 
-/** Still someone's problem. */
-export function isOpen(state: TaskState): boolean {
-  return state !== 'verified';
-}
-
 /**
  * Whether a move is allowed, and if not, what to tell the person who tried.
  *

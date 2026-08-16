@@ -32,6 +32,7 @@
 import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useStore } from '../lib/store';
+import { useAuth } from '../lib/auth';
 import {
   type ParseResult,
   type ParsedChecklist,
@@ -46,7 +47,14 @@ import { AlertIcon, ClipboardIcon, PlusIcon } from '../components/Icons';
 
 export function ChecklistImportScreen() {
   const navigate = useNavigate();
+  const auth = useAuth();
   const { templates, shared, isAdmin, createTemplate, saveTemplate, saveShared } = useStore();
+
+  // The company this acts on. Every checklist read or written here is scoped to
+  // it by row-level security, so naming it is not decoration — it is the answer
+  // to "whose checklists am I about to change?" for an admin who may have more
+  // than one deployment open.
+  const orgName = auth.profile?.organization?.name;
 
   const fileInput = useRef<HTMLInputElement>(null);
   const [filename, setFilename] = useState<string | null>(null);
@@ -56,7 +64,7 @@ export function ChecklistImportScreen() {
   if (!isAdmin) {
     return (
       <>
-        <TopBar title="Import checklists" back="/checklists" />
+        <TopBar title="Import, verify & export" back="/settings" />
         <Screen>
           <p className="text-sm text-ink-500">Only an admin can change checklists.</p>
         </Screen>
@@ -133,9 +141,9 @@ export function ChecklistImportScreen() {
   return (
     <>
       <TopBar
-        title="Import & export"
-        subtitle="Checklists as a spreadsheet"
-        back="/checklists"
+        title="Import, verify & export"
+        subtitle={orgName ? `${orgName} · checklists` : 'Checklists as a spreadsheet'}
+        back="/settings"
       />
 
       <Screen className="pb-10">
@@ -144,9 +152,10 @@ export function ChecklistImportScreen() {
         </h2>
         <Card className="p-4">
           <p className="text-[13px] leading-relaxed text-ink-500">
-            The export is every checkpoint in every active checklist, one row each, with its
-            type and flags. It is also exactly what Upload expects back — so the way to change a
-            lot at once is to export, edit, and upload the same file.
+            The export is every checkpoint in {orgName ? `${orgName}'s` : 'this company’s'}{' '}
+            active checklists, one row each, with its type and flags. It is also exactly what
+            Upload expects back — so the way to change a lot at once is to export, edit, and
+            upload the same file.
           </p>
           <div className="mt-3 flex flex-col gap-2">
             <Button variant="secondary" block onClick={exportAll}>
@@ -209,8 +218,12 @@ export function ChecklistImportScreen() {
         {result && !result.fatal ? (
           <>
             <h2 className="mt-6 mb-2 px-1 text-[13px] font-bold tracking-wide text-ink-500 uppercase">
-              What this will do
+              Verify
             </h2>
+            <p className="mb-2.5 px-1 text-[13px] text-ink-500">
+              Read what the file will do before anything is written. Nothing changes until you
+              press Apply.
+            </p>
 
             {checklists.length === 0 ? (
               <Card className="p-4">

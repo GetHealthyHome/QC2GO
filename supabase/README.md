@@ -192,8 +192,19 @@ select cron.schedule(
 );
 ```
 
-Any external scheduler hitting the same URL works just as well. Invoking it by
-hand is safe at any time — a delivered row is never selected again.
+Any external scheduler hitting the same URL works just as well, **as long as it
+sends that `Authorization: Bearer <service-role-key>` header** — the function
+now checks it. Without the check, the project's public anon key was enough to
+drive delivery on demand and turn the endpoints on file into a reflected POST
+flood. The cron snippet above already sends the right header, so it keeps
+working unchanged; invoking it by hand needs the service-role key too. A
+delivered row is still never selected again, so repeats are harmless.
+
+Destinations are also checked before a request is made: a URL that resolves to
+a private, loopback or link-local address — the cloud metadata endpoint, a
+service on `127.0.0.1`, an internal range — is refused rather than fetched, and
+a 3xx redirect is not followed onto such a host. `npm run check:webhook-ssrf`
+asserts it.
 
 ### How a webhook is delivered
 
@@ -287,6 +298,12 @@ Run it once with `{"dryRun": true}` before scheduling it on a deployment that ha
 been running a while — it reports what it would collect and deletes nothing.
 Then schedule it daily from the SQL editor; the cron snippet is in the header of
 `sweep-photos/index.ts`.
+
+Like `deliver-webhooks`, it now requires the caller to present the service-role
+key as a bearer token — it is the one function that permanently deletes
+evidence, and "any signed-in caller" includes anyone holding the public anon
+key. The cron `net.http_post` sends that header already; a manual `dryRun`
+invocation needs it too.
 
 ### `ai-scribe`
 

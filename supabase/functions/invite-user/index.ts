@@ -71,9 +71,16 @@ Deno.serve(async (request: Request) => {
   await admin
     .from('invites')
     .delete()
+    // Scoped to the caller's own company. This runs with the service key, so
+    // without the org filter the delete reaches every company's invites — and
+    // `ilike` on an admin-supplied address makes it worse, since a value like
+    // `%@x.com` (which passes the email check) becomes a wildcard. The address
+    // is already normalised to lowercase, so an exact match is both correct and
+    // free of wildcards.
+    .eq('org_id', decision.orgId)
+    .eq('email', decision.email)
     .is('accepted_at', null)
-    .lt('expires_at', new Date().toISOString())
-    .ilike('email', decision.email);
+    .lt('expires_at', new Date().toISOString());
 
   const { data: invite, error: inviteError } = await admin
     .from('invites')

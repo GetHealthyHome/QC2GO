@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useStore } from '../lib/store';
 import { useAuth } from '../lib/auth';
 import { categoryLabel } from '../templates';
-import { retryRejected, runSync, type SyncStatus } from '../lib/sync';
+import { clearDeviceForNewCompany, retryRejected, runSync, type SyncStatus } from '../lib/sync';
 import type { Role } from '../lib/types';
 import { Badge, Button, Card, Field, Screen, TextInput, TopBar, cx } from '../components/ui';
 import { LogoSlot } from '../components/Letterhead';
@@ -463,6 +463,7 @@ function BrandingCard() {
 function SyncCard() {
   const { sync } = useStore();
   const [retrying, setRetrying] = useState(false);
+  const [clearing, setClearing] = useState(false);
 
   const summary = describeSync(sync);
 
@@ -472,6 +473,23 @@ function SyncCard() {
       await retryRejected();
     } finally {
       setRetrying(false);
+    }
+  }
+
+  async function clearDevice() {
+    const confirmed = window.confirm(
+      'Erase everything stored on this device? Records that were never uploaded cannot be ' +
+        'recovered afterwards.',
+    );
+    if (!confirmed) return;
+    setClearing(true);
+    try {
+      await clearDeviceForNewCompany();
+      // A clean slate deserves a clean start: reloading re-seeds the shipped
+      // checklists and lets the first sync pull this company's data.
+      window.location.reload();
+    } catch {
+      setClearing(false);
     }
   }
 
@@ -497,13 +515,36 @@ function SyncCard() {
             variant="secondary"
             className="shrink-0 px-3 py-1.5 text-[13px]"
             onClick={() => void runSync()}
-            disabled={sync.phase === 'syncing'}
+            disabled={sync.phase === 'syncing' || sync.phase === 'blocked'}
           >
             Sync now
           </Button>
         </div>
 
         <p className="mt-2 text-[13px] leading-relaxed text-ink-500">{summary.detail}</p>
+
+        {sync.phase === 'blocked' ? (
+          <div className="mt-3 rounded-xl bg-fail-50 p-3">
+            <p className="text-[13px] font-semibold text-fail-700">
+              This device still holds another company&rsquo;s records
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-fail-700/80">
+              Uploading them under this account would put one company&rsquo;s jobs in
+              another&rsquo;s books, so sync stays paused. To use this device here, clear it and
+              start fresh — anything on it that was never uploaded will be permanently lost. To
+              keep the data instead, sign out and sign back in with the company it belongs to.
+            </p>
+            <Button
+              variant="secondary"
+              block
+              className="mt-2.5"
+              disabled={clearing}
+              onClick={() => void clearDevice()}
+            >
+              {clearing ? 'Clearing…' : 'Clear this device and start fresh'}
+            </Button>
+          </div>
+        ) : null}
 
         {sync.rejected > 0 ? (
           <div className="mt-3 rounded-xl bg-fail-50 p-3">
@@ -552,6 +593,15 @@ function describeSync(sync: SyncStatus): {
   }
   if (sync.phase === 'error') {
     return { label: 'Could not reach the server', detail: sync.error ?? last, tone: 'bad' };
+  }
+  if (sync.phase === 'blocked') {
+    return {
+      label: 'Sync is paused',
+      detail:
+        'The data on this device belongs to a different company than the account you are ' +
+        'signed in with, so nothing is uploaded or downloaded.',
+      tone: 'bad',
+    };
   }
   if (sync.pending > 0) {
     return {

@@ -249,6 +249,12 @@ jobs:
           curl -sf http://localhost:4173/ >/dev/null || { echo "preview server never came up"; exit 1; }
           npm run smoke
 
+      # The org-handover guard is all that stands between one company's local
+      # data and another company's account. The check drives the real sync
+      # module against real IndexedDB in a browser, and spawns its own server.
+      - name: Verify the org-handover guard
+        run: npm run check:org-guard
+
       # The sign-in gate is the only thing protecting a configured deployment, and
       # nothing else would catch it silently breaking. Dummy credentials are enough:
       # the assertion is that the app is unreachable, not that sign-in succeeds.

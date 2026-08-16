@@ -21,6 +21,7 @@ import {
   outboxRepo,
   photosRepo,
   sharedRepo,
+  syncAccountRepo,
   syncRepo,
   tasksRepo,
   templatesRepo,
@@ -63,7 +64,7 @@ const PERMANENT_CODES = new Set([
   '22P02', // invalid text representation
 ]);
 
-export type SyncPhase = 'disabled' | 'idle' | 'syncing' | 'offline' | 'error';
+export type SyncPhase = 'disabled' | 'idle' | 'syncing' | 'offline' | 'error' | 'blocked';
 
 export interface SyncStatus {
   phase: SyncPhase;
@@ -192,6 +193,97 @@ function scheduleSync(delay = 1500): void {
   timer = window.setTimeout(() => void runSync(), delay);
 }
 
+const BLOCKED_MESSAGE =
+  'This device holds data that belongs to a different company, so sync is paused.';
+
+/**
+ * Whether this device's local data and the signed-in account belong to
+ * different companies.
+ *
+ * Sign-out keeps local data — losing unsynced field work over a sign-out would
+ * be far worse — which leaves one dangerous path: a device that worked for
+ * company A gets signed into company B. Without this check, the first sync
+ * would adopt and upload A's customers, inspections and photos into B's
+ * account. Two companies' books, merged, silently.
+ *
+ * So the device remembers whose data it holds (`syncAccountRepo`, written the
+ * first time an org connects and never cleared by sign-out). Same company back
+ * again — even a different colleague's account — carries on; a colleague's
+ * sign-in just resets the pull watermark so their view catches up from scratch.
+ * A different company on an *empty* device moves across silently. A different
+ * company on a device with data parks the engine until a person decides,
+ * in Settings, to clear the device.
+ */
+async function blockedByOrgChange(): Promise<boolean> {
+  if (!context?.orgId) return false;
+  const account = { userId: context.userId, orgId: context.orgId };
+
+  const stored = await syncAccountRepo.get();
+  if (!stored) {
+    await syncAccountRepo.put(account);
+    return false;
+  }
+  if (stored.orgId === account.orgId) {
+    if (stored.userId !== account.userId) {
+      // Same company, different person. The stored watermark describes what the
+      // previous account had seen; survive-a-restart matters here, which the
+      // old in-memory check could not do.
+      await syncRepo.reset();
+      await syncAccountRepo.put(account);
+    }
+    return false;
+  }
+
+  const [customerCount, inspectionCount, photoCount, taskCount, templates, outbox] =
+    await Promise.all([
+      customersRepo.all().then((rows) => rows.length),
+      inspectionsRepo.all().then((rows) => rows.length),
+      photosRepo.count(),
+      tasksRepo.all().then((rows) => rows.length),
+      templatesRepo.all(),
+      outboxRepo.all(),
+    ]);
+  const holdsData =
+    customerCount > 0 ||
+    inspectionCount > 0 ||
+    photoCount > 0 ||
+    taskCount > 0 ||
+    outbox.length > 0 ||
+    // The shipped checklists are not anybody's data; edited or custom ones are.
+    templates.some((template) => !template.builtIn);
+  if (holdsData) return true;
+
+  // Nothing here belongs to anyone. Hand the device over cleanly.
+  await syncRepo.reset();
+  await outboxRepo.clear();
+  await syncAccountRepo.put(account);
+  return false;
+}
+
+/**
+ * Erase every record on this device so it can start fresh under the signed-in
+ * company. The one legitimate way out of the blocked state, and only ever
+ * called after an explicit confirmation in Settings — everything unsynced is
+ * unrecoverable after this. The caller reloads the app afterwards: the store
+ * re-seeds the shipped checklists on load and the next sync pulls the new
+ * company's data.
+ */
+export async function clearDeviceForNewCompany(): Promise<void> {
+  await Promise.all([
+    customersRepo.clear(),
+    inspectionsRepo.clear(),
+    photosRepo.clear(),
+    tasksRepo.clear(),
+    templatesRepo.clear(),
+    outboxRepo.clear(),
+    sharedRepo.clear(),
+  ]);
+  await syncRepo.reset();
+  if (context?.orgId) {
+    await syncAccountRepo.put({ userId: context.userId, orgId: context.orgId });
+  }
+}
+
 /**
  * Called when the signed-in account changes. Signing out stops the engine;
  * signing in as someone else resets the pull watermark, because the new account
@@ -212,6 +304,13 @@ export async function configureSync(next: SyncContext | null): Promise<void> {
     emit({ phase: 'idle', error: null });
     return;
   }
+  if (await blockedByOrgChange()) {
+    emit({ phase: 'blocked', error: BLOCKED_MESSAGE });
+    return;
+  }
+  // Passing the guard lifts a previous block immediately — not as a side effect
+  // of the next sync, which cannot run at all without a configured backend.
+  emit({ phase: 'idle', error: null });
   await refreshCounts();
   void runSync();
 }
@@ -254,9 +353,17 @@ export async function runSync(): Promise<void> {
   }
 
   running = true;
-  emit({ phase: 'syncing', error: null });
 
   try {
+    // Checked here as well as in configureSync so no trigger — the Sync now
+    // button, the five-minute timer, coming back online — can push one
+    // company's records under another's account.
+    if (await blockedByOrgChange()) {
+      emit({ phase: 'blocked', error: BLOCKED_MESSAGE });
+      return;
+    }
+    emit({ phase: 'syncing', error: null });
+
     const state = await syncRepo.get();
     if (!state.seededRemote) {
       await adoptLocalData(state);

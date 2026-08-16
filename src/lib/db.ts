@@ -179,6 +179,7 @@ export const tasksRepo = {
 
 export const outboxRepo = {
   all: () => tx<OutboxEntry[]>(STORES.outbox, 'readonly', (s) => s.getAll()),
+  get: (id: string) => tx<OutboxEntry | undefined>(STORES.outbox, 'readonly', (s) => s.get(id)),
   put: (entry: OutboxEntry) => tx(STORES.outbox, 'readwrite', (s) => s.put(entry)),
   remove: (id: string) => tx(STORES.outbox, 'readwrite', (s) => s.delete(id)),
   clear: () => tx(STORES.outbox, 'readwrite', (s) => s.clear()),

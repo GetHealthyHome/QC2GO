@@ -353,17 +353,36 @@ function classify(error: { code?: string; message: string } | null): PushError |
  * points at it, a customer before its inspections, an inspection before its
  * photos. Getting this wrong shows up as foreign key violations.
  */
+/**
+ * Every entity, in foreign-key order. Tasks come after customers because a task
+ * row points at one. The `satisfies`-style check below makes leaving an entity
+ * out a compile error rather than what it used to be: an outbox that quietly
+ * never drained. Task entries sat in the queue forever — never uploaded, and
+ * (because a pending entry also shields its record from pulls) never updated
+ * from the server either.
+ */
+const PUSH_ORDER = ['shared', 'template', 'customer', 'inspection', 'task', 'photo'] as const;
+type UnorderedEntity = Exclude<SyncEntity, (typeof PUSH_ORDER)[number]>;
+// If this line stops compiling, an entity is missing from PUSH_ORDER.
+const pushOrderCoversEveryEntity: UnorderedEntity extends never ? true : never = true;
+void pushOrderCoversEveryEntity;
+
 async function push(): Promise<void> {
   const entries = (await outboxRepo.all()).filter((entry) => !entry.failedAt);
   if (entries.length === 0) return;
 
-  const order: SyncEntity[] = ['shared', 'template', 'customer', 'inspection', 'photo'];
-
-  for (const entity of order) {
+  for (const entity of PUSH_ORDER) {
     for (const entry of entries.filter((candidate) => candidate.entity === entity)) {
       const failure = await pushOne(entry);
       if (!failure) {
-        await outboxRepo.remove(entry.id);
+        // Only clear the queue slot if it still describes the upload that just
+        // happened. An edit that landed while the upload was in flight re-wrote
+        // this entry with a fresh `queuedAt`; removing it here would silently
+        // drop that edit from the queue until the record was next touched.
+        const latest = await outboxRepo.get(entry.id);
+        if (!latest || latest.queuedAt === entry.queuedAt) {
+          await outboxRepo.remove(entry.id);
+        }
         continue;
       }
       const attempts = entry.attempts + 1;
@@ -397,8 +416,14 @@ async function pushOne(entry: OutboxEntry): Promise<PushError | null> {
       // The bucket first: a storage object with no row pointing at it is
       // invisible to the app and would just sit there costing money. The path
       // was captured when the delete was queued, since the local record that
-      // knew it is already gone by now.
-      await client.storage.from(PHOTO_BUCKET).remove([entry.storagePath]);
+      // knew it is already gone by now — which is also why a failure here has
+      // to stop the delete: once this entry clears, nothing remembers the path,
+      // so pressing on would orphan the bytes permanently. Removing an object
+      // that is already gone succeeds, so the retry is safe.
+      const removal = await client.storage.from(PHOTO_BUCKET).remove([entry.storagePath]);
+      if (removal.error) {
+        return { message: removal.error.message, permanent: false };
+      }
     }
     const table = tableFor(entry.entity);
     if (!table) return null;

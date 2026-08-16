@@ -278,12 +278,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const handler = () => flushPending();
-    window.addEventListener('pagehide', handler);
-    document.addEventListener('visibilitychange', () => {
+    const onHidden = () => {
       if (document.visibilityState === 'hidden') flushPending();
-    });
+    };
+    window.addEventListener('pagehide', handler);
+    document.addEventListener('visibilitychange', onHidden);
     return () => {
       window.removeEventListener('pagehide', handler);
+      // This one used to be an inline arrow that cleanup never removed, so
+      // every remount of the provider stacked another listener flushing a dead
+      // instance's queue.
+      document.removeEventListener('visibilitychange', onHidden);
       flushPending();
     };
   }, [flushPending]);

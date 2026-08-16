@@ -81,9 +81,11 @@ export function ChecklistsScreen() {
             <Link to="/checklists/import" className="flex items-center gap-3 p-4">
               <ClipboardIcon className="size-5 shrink-0 text-ink-300" />
               <div className="min-w-0 flex-1">
-                <p className="text-[15px] font-semibold text-ink-900">Import &amp; export</p>
+                <p className="text-[15px] font-semibold text-ink-900">
+                  Import, verify &amp; export
+                </p>
                 <p className="text-xs text-ink-500">
-                  Every question as a spreadsheet · upload to change a lot at once
+                  Every question as a spreadsheet · verify a file before it changes anything
                 </p>
               </div>
               <ChevronRightIcon className="size-5 shrink-0 text-ink-300" />

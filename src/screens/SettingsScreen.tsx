@@ -300,6 +300,25 @@ export function SettingsScreen() {
         </Card>
 
         {isAdmin ? (
+          <Card className="mt-2.5 active:bg-ink-50">
+            <Link to="/checklists/import" className="flex items-center gap-3 p-4">
+              <ClipboardIcon className="size-5 shrink-0 text-ink-300" />
+              <div className="min-w-0 flex-1">
+                <p className="text-[15px] font-semibold text-ink-900">
+                  Import, verify &amp; export
+                </p>
+                <p className="text-xs text-ink-500">
+                  Download this company&rsquo;s checklists as a spreadsheet, check a file, and
+                  upload it back
+                </p>
+              </div>
+              <Badge tone="brand">Admin</Badge>
+              <ChevronRightIcon className="size-5 shrink-0 text-ink-300" />
+            </Link>
+          </Card>
+        ) : null}
+
+        {isAdmin ? (
           <>
             <p className="mt-3 mb-2.5 px-1 text-[13px] text-ink-500">
               Categories group the checklists on the picker. A checklist already filed under

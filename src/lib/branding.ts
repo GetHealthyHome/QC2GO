@@ -23,8 +23,6 @@ export const LOGO_SLOT = {
   height: 72,
 } as const;
 
-export const LOGO_ASPECT = LOGO_SLOT.width / LOGO_SLOT.height;
-
 /**
  * Stored at three times the on-screen slot. A report is printed as often as it
  * is read, and a 216px-wide image on paper is a blurry one — 648px across the

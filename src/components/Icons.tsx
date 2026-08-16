@@ -133,13 +133,6 @@ export const SettingsIcon = (props: IconProps) => (
   </Icon>
 );
 
-export const HomeIcon = (props: IconProps) => (
-  <Icon {...props}>
-    <path d="m3 10 9-7 9 7v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
-    <path d="M9 21v-7h6v7" />
-  </Icon>
-);
-
 export const UserIcon = (props: IconProps) => (
   <Icon {...props}>
     <circle cx="12" cy="8" r="4" />

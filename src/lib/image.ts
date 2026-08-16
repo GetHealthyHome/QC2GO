@@ -160,9 +160,3 @@ function formatStamp(iso: string): string {
   if (Number.isNaN(date.getTime())) return iso;
   return `${date.toISOString().slice(0, 19).replace('T', ' ')} UTC`;
 }
-
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}

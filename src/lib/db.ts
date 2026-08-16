@@ -143,6 +143,7 @@ export const customersRepo = {
   get: (id: string) => tx<Customer | undefined>(STORES.customers, 'readonly', (s) => s.get(id)),
   put: (customer: Customer) => tx(STORES.customers, 'readwrite', (s) => s.put(customer)),
   remove: (id: string) => tx(STORES.customers, 'readwrite', (s) => s.delete(id)),
+  clear: () => tx(STORES.customers, 'readwrite', (s) => s.clear()),
 };
 
 export const inspectionsRepo = {
@@ -152,6 +153,7 @@ export const inspectionsRepo = {
     getAllByIndex<Inspection>(STORES.inspections, 'customerId', customerId),
   put: (inspection: Inspection) => tx(STORES.inspections, 'readwrite', (s) => s.put(inspection)),
   remove: (id: string) => tx(STORES.inspections, 'readwrite', (s) => s.delete(id)),
+  clear: () => tx(STORES.inspections, 'readwrite', (s) => s.clear()),
 };
 
 export const photosRepo = {
@@ -161,12 +163,16 @@ export const photosRepo = {
     getAllByIndex<PhotoRecord>(STORES.photos, 'inspectionId', inspectionId),
   put: (photo: PhotoRecord) => tx(STORES.photos, 'readwrite', (s) => s.put(photo)),
   remove: (id: string) => tx(STORES.photos, 'readwrite', (s) => s.delete(id)),
+  /** `all()` drags every blob into memory; asking "any photos?" must not. */
+  count: () => tx<number>(STORES.photos, 'readonly', (s) => s.count()),
+  clear: () => tx(STORES.photos, 'readwrite', (s) => s.clear()),
 };
 
 export const templatesRepo = {
   all: () => tx<Template[]>(STORES.templates, 'readonly', (s) => s.getAll()),
   put: (template: Template) => tx(STORES.templates, 'readwrite', (s) => s.put(template)),
   remove: (id: string) => tx(STORES.templates, 'readwrite', (s) => s.delete(id)),
+  clear: () => tx(STORES.templates, 'readwrite', (s) => s.clear()),
 };
 
 export const tasksRepo = {
@@ -175,6 +181,7 @@ export const tasksRepo = {
   byCustomer: (customerId: string) => getAllByIndex<Task>(STORES.tasks, 'customerId', customerId),
   put: (task: Task) => tx(STORES.tasks, 'readwrite', (s) => s.put(task)),
   remove: (id: string) => tx(STORES.tasks, 'readwrite', (s) => s.delete(id)),
+  clear: () => tx(STORES.tasks, 'readwrite', (s) => s.clear()),
 };
 
 export const outboxRepo = {
@@ -189,6 +196,7 @@ const SETTINGS_KEY = 'app';
 const SHARED_KEY = 'shared';
 const SYNC_KEY = 'sync';
 const PROFILE_KEY = 'profile';
+const SYNC_ACCOUNT_KEY = 'syncAccount';
 
 const DEFAULT_SETTINGS: Settings = { inspectorName: '', companyName: '', role: 'inspector' };
 
@@ -240,6 +248,34 @@ export const sharedRepo = {
   },
   put: (value: SharedConfig) =>
     tx(STORES.settings, 'readwrite', (s) => s.put({ key: SHARED_KEY, value })),
+  clear: () => tx(STORES.settings, 'readwrite', (s) => s.delete(SHARED_KEY)),
+};
+
+/**
+ * Which account's company this device's data belongs to.
+ *
+ * Deliberately not cleared on sign-out — that is the whole point of it. Local
+ * data survives a sign-out so unsynced field work is never destroyed by one,
+ * and this record is how the sync engine later tells "the same company came
+ * back" from "a different company signed in", which must not silently inherit —
+ * and upload — the previous company's customers.
+ */
+export interface SyncAccount {
+  userId: string;
+  orgId: string;
+}
+
+export const syncAccountRepo = {
+  async get(): Promise<SyncAccount | undefined> {
+    const row = await tx<{ key: string; value: SyncAccount } | undefined>(
+      STORES.settings,
+      'readonly',
+      (s) => s.get(SYNC_ACCOUNT_KEY),
+    );
+    return row?.value;
+  },
+  put: (value: SyncAccount) =>
+    tx(STORES.settings, 'readwrite', (s) => s.put({ key: SYNC_ACCOUNT_KEY, value })),
 };
 
 const DEFAULT_SYNC_STATE: SyncState = {

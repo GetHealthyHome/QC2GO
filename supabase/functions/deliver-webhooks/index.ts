@@ -12,6 +12,8 @@
  */
 import { createClient } from 'jsr:@supabase/supabase-js@2';
 import { MAX_ATTEMPTS, isDelivered, isWorthRetrying, nextAttemptAfter } from './schedule.ts';
+import { blockedReason } from './ssrf.ts';
+import { refuseUnlessCron } from '../_shared/cron.ts';
 
 /** Enough to clear a backlog, few enough that one run cannot hang for minutes. */
 const BATCH = 25;
@@ -30,7 +32,12 @@ async function sign(secret: string, body: string): Promise<string> {
   return [...new Uint8Array(signature)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-Deno.serve(async () => {
+Deno.serve(async (request: Request) => {
+  // Only the scheduler drains the queue. Unauthenticated, the anon key could
+  // drive continuous delivery — a POST-flood aimed at the endpoints on file.
+  const refused = refuseUnlessCron(request);
+  if (refused) return refused;
+
   const admin = createClient(
     Deno.env.get('SUPABASE_URL')!,
     Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!,
@@ -74,26 +81,45 @@ Deno.serve(async () => {
     let status = 0;
     let message: string | null = null;
 
-    try {
-      const response = await fetch(endpoint.url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-QC2GO-Event': row.event,
-          'X-QC2GO-Signature': `sha256=${await sign(endpoint.secret, body)}`,
-          'X-QC2GO-Delivery': String(row.id),
-        },
-        body,
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
-      status = response.status;
-      if (!isDelivered(status)) {
-        // The first part of the body, for somebody diagnosing this in Settings.
-        // Whole error pages are not worth storing per delivery.
-        message = (await response.text().catch(() => '')).slice(0, 500) || `HTTP ${status}`;
+    // Refuse a destination that points inside the network before opening a
+    // connection to it. A blocked endpoint is a permanent misconfiguration, not
+    // a blip — retrying it would just probe the same internal target on a
+    // schedule — so it is failed outright below via isWorthRetrying(0).
+    const blocked = blockedReason(endpoint.url);
+    if (blocked) {
+      message = `refused to deliver: ${blocked}`;
+    } else {
+      try {
+        const response = await fetch(endpoint.url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-QC2GO-Event': row.event,
+            'X-QC2GO-Signature': `sha256=${await sign(endpoint.secret, body)}`,
+            'X-QC2GO-Delivery': String(row.id),
+          },
+          body,
+          // A 3xx is not followed. Following it would let a public URL that
+          // passed the check above redirect the request onto an internal host,
+          // which is the whole SSRF back door reopened. A receiver that wants a
+          // different URL can say so; we do not chase it.
+          redirect: 'manual',
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
+        status = response.status;
+        // An opaqueredirect (or any 3xx) is treated as a failed delivery, not a
+        // success — the body never reached a verified endpoint.
+        if (response.type === 'opaqueredirect' || (status >= 300 && status < 400)) {
+          status = 0;
+          message = 'the destination redirected; redirects are not followed';
+        } else if (!isDelivered(status)) {
+          // The first part of the body, for somebody diagnosing this in Settings.
+          // Whole error pages are not worth storing per delivery.
+          message = (await response.text().catch(() => '')).slice(0, 500) || `HTTP ${status}`;
+        }
+      } catch (problem) {
+        message = problem instanceof Error ? problem.message : String(problem);
       }
-    } catch (problem) {
-      message = problem instanceof Error ? problem.message : String(problem);
     }
 
     if (isDelivered(status)) {
@@ -106,7 +132,10 @@ Deno.serve(async () => {
     }
 
     failed += 1;
-    const retryAt = isWorthRetrying(status) ? nextAttemptAfter(attempts, now) : null;
+    // A blocked destination never becomes deliverable by waiting, and retrying
+    // it is exactly the repeated internal probe the block exists to stop.
+    const retryAt =
+      !blocked && isWorthRetrying(status) ? nextAttemptAfter(attempts, now) : null;
     await admin
       .from('webhook_deliveries')
       .update({

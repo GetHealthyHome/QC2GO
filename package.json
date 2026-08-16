@@ -18,6 +18,7 @@
     "check:exif": "node scripts/check-exif.mjs",
     "check:annotations": "node scripts/check-annotations.mjs",
     "check:webhooks": "node scripts/check-webhook-schedule.mjs",
+    "check:webhook-ssrf": "node scripts/check-webhook-ssrf.mjs",
     "check:export": "node scripts/check-export.mjs",
     "check:sections": "node scripts/check-sections.mjs",
     "check:share-access": "node scripts/check-share-access.mjs",

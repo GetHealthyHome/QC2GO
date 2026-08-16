@@ -989,6 +989,68 @@ check('an inspector cannot rewrite a signed inspection', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Profiles: the roster, and the owner boundary (migration 0018)
+//
+// Two faults lived here. Every authenticated UPDATE on profiles threw
+// "infinite recursion", because the self-update policy pinned the role with a
+// sub-select on profiles from inside a profiles policy. And with that removed,
+// a mere admin could set any role — owner included — on any profile, crossing
+// the one tier that invites people and manages outbound webhooks. Both are
+// asserted here so neither can quietly come back.
+// ---------------------------------------------------------------------------
+
+const ACME_INSPECTOR = '77777777-7777-7777-7777-777777777777';
+psql(`
+  insert into public.invites (org_id, email, role, invited_by)
+  values ('aaaaaaaa-0000-0000-0000-000000000001', 'insp@acme.test', 'inspector', '${ACME}');
+  insert into auth.users (id, email) values ('${ACME_INSPECTOR}', 'insp@acme.test');
+`);
+
+check('a user can edit their own profile (no recursion)', () => {
+  tx(ACME_INSPECTOR, `update public.profiles set full_name = 'Field Nate' where id = '${ACME_INSPECTOR}';`);
+  const name = psql(`select coalesce(full_name, '') from public.profiles where id = '${ACME_INSPECTOR}';`);
+  return name === 'Field Nate' ? null : `self-update did not take: "${name}"`;
+});
+
+check('a user cannot change their own role', () => {
+  tx(ACME_INSPECTOR, `update public.profiles set role = 'owner' where id = '${ACME_INSPECTOR}';`, { expectError: true });
+  const role = psql(`select role from public.profiles where id = '${ACME_INSPECTOR}';`);
+  return role === 'inspector' ? null : `an inspector changed their own role to ${role}`;
+});
+
+check('THE OWNER BOUNDARY: an admin cannot promote itself to owner', () => {
+  tx(ACME_ADMIN, `update public.profiles set role = 'owner' where id = '${ACME_ADMIN}';`, { expectError: true });
+  const role = psql(`select role from public.profiles where id = '${ACME_ADMIN}';`);
+  return role === 'admin' ? null : `an admin escalated itself to ${role}`;
+});
+
+check('an admin cannot demote the owner', () => {
+  tx(ACME_ADMIN, `update public.profiles set role = 'inspector' where id = '${ACME}';`, { expectError: true });
+  const role = psql(`select role from public.profiles where id = '${ACME}';`);
+  return role === 'owner' ? null : `an admin demoted the owner to ${role}`;
+});
+
+check('an admin cannot make someone else an owner', () => {
+  tx(ACME_ADMIN, `update public.profiles set role = 'owner' where id = '${ACME_INSPECTOR}';`, { expectError: true });
+  const role = psql(`select role from public.profiles where id = '${ACME_INSPECTOR}';`);
+  return role === 'inspector' ? null : `an admin minted a new owner (${role})`;
+});
+
+check('an owner can still manage admin and inspector roles', () => {
+  tx(ACME, `update public.profiles set role = 'admin' where id = '${ACME_INSPECTOR}';`);
+  const up = psql(`select role from public.profiles where id = '${ACME_INSPECTOR}';`);
+  tx(ACME, `update public.profiles set role = 'inspector' where id = '${ACME_INSPECTOR}';`);
+  const down = psql(`select role from public.profiles where id = '${ACME_INSPECTOR}';`);
+  return up === 'admin' && down === 'inspector' ? null : `owner could not manage roles (${up}/${down})`;
+});
+
+check('one company cannot change another company\'s roles', () => {
+  tx(BETA, `update public.profiles set role = 'inspector' where id = '${ACME_ADMIN}';`, { expectError: true });
+  const role = psql(`select role from public.profiles where id = '${ACME_ADMIN}';`);
+  return role === 'admin' ? null : `Beta reached into Acme's roster (${role})`;
+});
+
+// ---------------------------------------------------------------------------
 // The other way 0004 runs: over a database that already has a company in it
 //
 // Everything above started from nothing, which is how a new deployment arrives

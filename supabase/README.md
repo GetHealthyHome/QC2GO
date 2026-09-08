@@ -282,7 +282,40 @@ supabase functions deploy set-password
 
 No secrets of its own. Like `invite-user` it runs with the `service_role` key,
 because the admin API is the only thing that can set a password on another
-account.
+account. Leave JWT verification on — the function reads the caller from their
+token, and with it off there is no caller to read.
+
+**Nothing works until that deploy has run.** The buttons ship with the app, so
+the screen looks finished while every press fails. That is the same trap the
+migrations have, and it is worth checking rather than assuming:
+
+```sql
+-- Everything set-password leans on. Read-only; safe to run any time.
+select 'invites table (0004)' as needs,
+       case when to_regclass('public.invites') is not null then 'ok' else 'MISSING' end as state
+union all
+select 'audit_log table (0006)',
+       case when to_regclass('public.audit_log') is not null then 'ok' else 'MISSING' end
+union all
+select 'profiles.org_id (0004)',
+       case when exists (
+         select 1 from information_schema.columns
+         where table_schema = 'public' and table_name = 'profiles' and column_name = 'org_id'
+       ) then 'ok' else 'MISSING' end
+union all
+select 'handle_new_user() (0004)',
+       case when to_regprocedure('public.handle_new_user()') is not null then 'ok' else 'MISSING' end
+union all
+select 'signup trigger on auth.users',
+       case when exists (select 1 from pg_trigger where tgname = 'on_auth_user_created')
+       then 'ok' else 'MISSING' end
+order by 1;
+```
+
+Any `MISSING` means the migration behind it has not been applied to this project;
+apply it before deploying, or the function will fail on its first call rather
+than at deploy time. The function itself appears under **Edge Functions** in the
+dashboard once deployed — if it is not listed, the deploy did not happen.
 
 **What makes it safe rather than merely convenient:**
 

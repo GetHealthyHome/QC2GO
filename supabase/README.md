@@ -157,6 +157,7 @@ as a conflict nobody can resolve.
 | Function | JWT | Called by |
 | --- | --- | --- |
 | `invite-user` | required | an owner, from Settings → People |
+| `set-password` | required | an owner or admin, from Settings → People |
 | `shared-report` | **none** | anybody holding a share link, with no account |
 | `deliver-webhooks` | required | `cron`, every minute |
 | `sweep-photos` | required | `cron`, daily at 04:00 UTC |
@@ -263,6 +264,71 @@ to the function automatically.
 
 Without `QC2GO_SITE_URL` the invitation link points at Supabase's own default and
 the person never reaches the app.
+
+### `set-password`
+
+The other way somebody gets into the app: an owner or admin types a password and
+tells them what it is.
+
+Invitations assume an address the person can actually reach. A lot of crew have
+no work email, never read it, or have not set it up on the phone they are
+standing there holding — and "check your inbox for a link" is not an answer when
+the job starts in ten minutes. This covers that, and the more common case of
+somebody who has simply forgotten their password on a Monday morning.
+
+```bash
+supabase functions deploy set-password
+```
+
+No secrets of its own. Like `invite-user` it runs with the `service_role` key,
+because the admin API is the only thing that can set a password on another
+account.
+
+**What makes it safe rather than merely convenient:**
+
+**The password is temporary by construction.** The account is flagged
+`needs_password` — the same flag an invitation sets — so the app puts the person
+on "Choose a password" before showing them anything. Whatever was typed stops
+working the moment they pick their own, so a password read aloud on a driveway
+has a life measured in minutes, and the admin does not carry on knowing it.
+
+**An admin may only reset an inspector.** This is the rule the whole feature
+rests on. If an admin could set the owner's password, admin and owner would be
+the same rank in practice — the admin would take the owner's account and use it.
+The same argument applies to another admin, so that is refused too. An owner can
+reset anyone; anybody can set their own. `npm run check:set-password-authorization`
+asserts every one of those cases.
+
+**Creating an account is still owner-only**, matching invitations. Resetting a
+password helps somebody already on the roster; adding an account changes who is
+on it, and that has been an owner's decision since invitations existed.
+
+**A new account is created through the invitation machinery**, not around it.
+The function writes the `invites` row first and then creates the user, because
+`handle_new_user` reads that row to decide which company the profile belongs to.
+Creating the account without it would land a profile with no company — an
+account that signs in and sees nothing.
+
+**Every reset is written to `audit_log`** as `password_set_by_admin`, with who
+did it and to whom. Never the password. What matters afterwards is that somebody
+could have signed in as that person from that moment, and who that somebody was.
+
+**This is not a way to lock somebody out.** Setting a password changes what is
+needed to sign in *next time*; it does not reliably end sessions that are already
+signed in, and this app is built to keep people signed in for months. A phone
+that is already in the app may well stay in it. For somebody who has left, or a
+handset that has gone missing, set `profiles.active` to false — that is the
+control meant for it. Treat this one as "they cannot get in" only after you have
+confirmed what your project's GoTrue version does with existing refresh tokens
+on an admin password change.
+
+Passwords are checked against the same rule in both places: at least 10
+characters, at most 72 **bytes** — bcrypt ignores everything past that, so a
+longer one is silently truncated rather than stronger — no leading or trailing
+spaces, and not the address or one of the handful anybody would try first. The
+browser keeps a copy of that rule in `src/lib/password.ts` so a short password is
+refused without a round trip, and CI runs the same inputs through both and
+asserts they agree, because a mirror that has drifted is worse than no mirror.
 
 ### `sweep-photos`
 

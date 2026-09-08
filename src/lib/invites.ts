@@ -69,28 +69,85 @@ export async function listPendingInvites(): Promise<Invite[]> {
  */
 export async function inviteMember(email: string, role: Role): Promise<{ error?: string }> {
   if (!supabase) return { error: 'Invitations need a backend. This deployment has none.' };
+  return callFunction('invite-user', { email, role }, 'The invitation could not be sent.');
+}
 
-  const { data, error } = await supabase.functions.invoke('invite-user', {
-    body: { email, role },
-  });
+/**
+ * Call an Edge Function and surface the reason it refused.
+ *
+ * Worth having in one place: the functions answer a refusal with a readable
+ * message and a status, but `supabase-js` reports only that something failed
+ * and hides the body on the error's `context`. Without digging it out, "an
+ * admin can only reset an inspector's password" reaches the screen as "Edge
+ * Function returned a non-2xx status code".
+ */
+async function callFunction(
+  name: string,
+  body: Record<string, unknown>,
+  fallback: string,
+): Promise<{ error?: string }> {
+  const { data, error } = await supabase!.functions.invoke(name, { body });
 
   if (error) {
-    // The function answers refusals with a readable message and a status; the
-    // client library reports only that something failed, so dig the message out.
     const context = (error as { context?: Response }).context;
     if (context && typeof context.json === 'function') {
       try {
-        const body = await context.json();
-        if (body?.error) return { error: String(body.error) };
+        const parsed = await context.json();
+        if (parsed?.error) return { error: String(parsed.error) };
       } catch {
         // Fall through to the generic message below.
       }
     }
-    return { error: error.message || 'The invitation could not be sent.' };
+    return { error: error.message || fallback };
   }
 
   if (data?.error) return { error: String(data.error) };
   return {};
+}
+
+/**
+ * Give somebody a password directly, without an email round trip.
+ *
+ * Needs the admin API and therefore the `service_role` key, so it happens in an
+ * Edge Function; this only asks. The account is flagged `needs_password`, so
+ * whatever is set here is a one-time key — the person chooses their own before
+ * the app shows them anything.
+ *
+ * Who may do this to whom is decided on the server: an owner can reset anyone
+ * in the company, an admin only an inspector. An admin resetting an owner would
+ * be an admin taking the company.
+ */
+export async function setMemberPassword(
+  userId: string,
+  password: string,
+): Promise<{ error?: string }> {
+  if (!supabase) return { error: 'Passwords need a backend. This deployment has none.' };
+  return callFunction(
+    'set-password',
+    { action: 'set', userId, password },
+    'The password could not be set.',
+  );
+}
+
+/**
+ * Add somebody who has no account at all and give them a password on the spot —
+ * for a crew member with no work email to receive an invitation at.
+ *
+ * Owner-only: this changes who is on the roster, which has been an owner's
+ * decision since invitations existed.
+ */
+export async function addMemberWithPassword(input: {
+  email: string;
+  password: string;
+  role: Role;
+  fullName?: string;
+}): Promise<{ error?: string }> {
+  if (!supabase) return { error: 'Accounts need a backend. This deployment has none.' };
+  return callFunction(
+    'set-password',
+    { action: 'create', ...input },
+    'The account could not be created.',
+  );
 }
 
 /** Withdraw an invitation nobody has accepted. Owner-only, enforced by policy. */

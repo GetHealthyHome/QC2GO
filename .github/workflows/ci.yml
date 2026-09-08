@@ -42,6 +42,13 @@ jobs:
       - name: Check who may invite whom
         run: npm run check:invite-authorization
 
+      # Setting a password hands over an account outright, and this function
+      # runs with the service_role key too. The case that matters is an admin
+      # reaching an owner: if that were allowed, admin and owner would be the
+      # same rank in practice.
+      - name: Check who may set whose password
+        run: npm run check:set-password-authorization
+
       # Byte-level parsing fails quietly: a wrong offset gives a plausible
       # number rather than an error, and a missed hemisphere reference puts a
       # job on the wrong side of the equator.
